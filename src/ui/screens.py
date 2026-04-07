@@ -7,7 +7,7 @@ def create_song_list(page: ft.Page, language: str, search_query: str = ""):
         
         if not songs:
             return ft.Container(
-                content=ft.Text(f"No {language} songs found natively yet. Did you sync from the cloud?", color=page.theme.color_scheme.secondary),
+                content=ft.Text(f"No {language} songs yet. Tap Settings > Sync Now.", color=page.theme.color_scheme.secondary),
                 alignment=ft.alignment.center,
                 padding=20
             )
@@ -17,18 +17,18 @@ def create_song_list(page: ft.Page, language: str, search_query: str = ""):
             list_view.controls.append(
                 ft.Card(
                     content=ft.ListTile(
-                        leading=ft.Icon(ft.icons.MUSIC_NOTE, color=page.theme.color_scheme.secondary),
+                        leading=ft.Icon(ft.Icons.MUSIC_NOTE, color=page.theme.color_scheme.secondary),
                         title=ft.Text(f"{song.number}. {song.title}" if song.number else song.title, weight=ft.FontWeight.BOLD),
                         subtitle=ft.Text(f"{len(song.lyrics.splitlines())} lines", color=page.theme.color_scheme.secondary),
-                        trailing=ft.Icon(ft.icons.FAVORITE if song.is_favorite else ft.icons.CHEVRON_RIGHT, 
-                                         color=ft.colors.RED_400 if song.is_favorite else None),
+                        trailing=ft.Icon(ft.Icons.FAVORITE if song.is_favorite else ft.Icons.CHEVRON_RIGHT, 
+                                         color=ft.Colors.RED_400 if song.is_favorite else None),
                         on_click=lambda e, s=song: _navigate_to_song(page, s)
                     )
                 )
             )
         return list_view
     except Exception as e:
-        return ft.Text(f"Error loading list: {e}", color=ft.colors.RED)
+        return ft.Text(f"Error loading list: {e}", color=ft.Colors.RED)
 
 def _navigate_to_song(page: ft.Page, song):
     page.go(f"/song/{song.id}")
@@ -64,8 +64,8 @@ class HomeView(ft.View):
             on_change=self.handle_tab_change,
             animation_duration=300,
             tabs=[
-                ft.Tab(text="Tamil", icon=ft.icons.LANGUAGE, content=create_song_list(page, "tamil")),
-                ft.Tab(text="Telugu", icon=ft.icons.LANGUAGE, content=create_song_list(page, "telugu")),
+                ft.Tab(text="Tamil", icon=ft.Icons.LANGUAGE, content=create_song_list(page, "tamil")),
+                ft.Tab(text="Telugu", icon=ft.Icons.LANGUAGE, content=create_song_list(page, "telugu")),
             ],
             expand=1,
         )
@@ -76,8 +76,8 @@ class HomeView(ft.View):
                 bgcolor=page.theme.color_scheme.primary,
                 center_title=True,
                 actions=[
-                    ft.IconButton(ft.icons.SEARCH, icon_color=page.theme.color_scheme.secondary, on_click=self.toggle_search),
-                    ft.IconButton(ft.icons.SETTINGS, icon_color=page.theme.color_scheme.secondary, on_click=lambda e: _navigate_to_admin(page))
+                    ft.IconButton(ft.Icons.SEARCH, icon_color=page.theme.color_scheme.secondary, on_click=self.toggle_search),
+                    ft.IconButton(ft.Icons.SETTINGS, icon_color=page.theme.color_scheme.secondary, on_click=lambda e: _navigate_to_admin(page))
                 ]
             ),
             self.search_bar_container,
@@ -118,8 +118,8 @@ class SongView(ft.View):
             
         self.lyrics_text = ft.Text(self.song.lyrics, size=self.font_size, selectable=True)
         self.fav_icon = ft.Icon(
-            name=ft.icons.FAVORITE if self.song.is_favorite else ft.icons.FAVORITE_BORDER,
-            color=ft.colors.RED_400 if self.song.is_favorite else page.theme.color_scheme.secondary
+            name=ft.Icons.FAVORITE if self.song.is_favorite else ft.Icons.FAVORITE_BORDER,
+            color=ft.Colors.RED_400 if self.song.is_favorite else page.theme.color_scheme.secondary
         )
         
         self.controls = [
@@ -128,12 +128,12 @@ class SongView(ft.View):
                 bgcolor=page.theme.color_scheme.primary,
                 actions=[
                     ft.IconButton(
-                        icon=ft.icons.TEXT_DECREASE, 
+                        icon=ft.Icons.TEXT_DECREASE, 
                         icon_color=page.theme.color_scheme.secondary,
                         on_click=self.decrease_font
                     ),
                     ft.IconButton(
-                        icon=ft.icons.TEXT_INCREASE, 
+                        icon=ft.Icons.TEXT_INCREASE, 
                         icon_color=page.theme.color_scheme.secondary,
                         on_click=self.increase_font
                     ),
@@ -172,8 +172,8 @@ class SongView(ft.View):
     def toggle_fav(self, e):
         new_status = toggle_favorite(self.page, self.song.id)
         self.song.is_favorite = new_status
-        self.fav_icon.name = ft.icons.FAVORITE if new_status else ft.icons.FAVORITE_BORDER
-        self.fav_icon.color = ft.colors.RED_400 if new_status else self.page.theme.color_scheme.secondary
+        self.fav_icon.name = ft.Icons.FAVORITE if new_status else ft.Icons.FAVORITE_BORDER
+        self.fav_icon.color = ft.Colors.RED_400 if new_status else self.page.theme.color_scheme.secondary
         self.page.update()
 
 
@@ -182,7 +182,7 @@ class AdminView(ft.View):
         super().__init__("/admin", [])
         self.page = page
         
-        self.status_text = ft.Text("Ready.", color=ft.colors.GREEN)
+        self.status_text = ft.Text("Ready.", color=ft.Colors.GREEN)
         
         self.controls = [
             ft.AppBar(
@@ -193,10 +193,9 @@ class AdminView(ft.View):
                 content=ft.Column(
                     [
                         ft.Text("Database Synchronization", size=24, weight=ft.FontWeight.BOLD),
-                        ft.Text("Click the button below to download the latest songs from the administrative cloud. This will update your offline cache instantly."),
+                        ft.Text("Click the button below to download the latest songs from the cloud."),
                         ft.ElevatedButton(
                             text="Sync Now",
-                            icon=ft.icons.CLOUD_DOWNLOAD,
                             on_click=self.trigger_sync
                         ),
                         self.status_text
@@ -209,16 +208,16 @@ class AdminView(ft.View):
         
     def trigger_sync(self, e):
         self.status_text.value = "Syncing from cloud..."
-        self.status_text.color = ft.colors.BLUE
+        self.status_text.color = ft.Colors.BLUE
         self.page.update()
         
         try:
             count = fetch_all_from_cloud(self.page)
             self.status_text.value = f"Successfully synced {count} songs locally."
-            self.status_text.color = ft.colors.GREEN
+            self.status_text.color = ft.Colors.GREEN
         except Exception as ex:
             self.status_text.value = f"Error syncing: {ex}"
-            self.status_text.color = ft.colors.RED
+            self.status_text.color = ft.Colors.RED
             
         self.page.update()
 

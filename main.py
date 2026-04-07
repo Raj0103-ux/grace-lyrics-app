@@ -12,7 +12,7 @@ def main(page: ft.Page):
     try:
         db.init_db(page)
     except Exception as db_err:
-        page.add(ft.Text(f"CRITICAL DB INIT ERROR: {db_err}", color=ft.colors.RED))
+        page.add(ft.Text(f"CRITICAL DB INIT ERROR: {db_err}", color=ft.Colors.RED))
         return
 
     def route_change(route):
@@ -37,7 +37,7 @@ def main(page: ft.Page):
             page.views.append(
                 ft.View(
                     "/error",
-                    [ft.Text(f"CRASH OCCURRED: {e}", color=ft.colors.RED, selectable=True)]
+                    [ft.Text(f"CRASH OCCURRED: {e}", color=ft.Colors.RED, selectable=True)]
                 )
             )
             page.update()
