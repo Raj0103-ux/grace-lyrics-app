@@ -6,7 +6,10 @@ import json
 from typing import List, Optional
 from src.models.song import Song
 
-DB_PATH = os.path.join(os.path.dirname(__file__), 'grace_lyrics.db')
+# Get a safe, writable path on Android
+DB_DIR = os.path.dirname(__file__)
+DB_PATH = os.path.join(DB_DIR, 'grace_lyrics.db')
+
 
 # Firebase Firestore Configuration
 PROJECT_ID = "grace-lyrics-admin"
@@ -167,4 +170,36 @@ def get_song_by_id(song_id: str) -> Optional[Song]:
         
     return None
 
-init_db()
+# Initial seed data for testing
+def seed_mock_data():
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('SELECT COUNT(*) FROM songs')
+    count = c.fetchone()[0]
+    conn.close()
+    
+    # Only seed if completely empty
+    if count == 0:
+        tamil_lyrics = """கர்த்தாவே தேவர்களில் உமக்கொப்பனவர் யார்? வானத்திலும் பூமியிலும் உமக்கொப்பானவர் யார்?
+
+உமக்கொப்பனவர் யார்? உமக்கொப்பனவர் யார்? வானத்திலும் பூமியிலும் உமக்கொப்பானவர் யார்?
+
+1. செங்கடலை நீர் பிளந்து உந்தன் ஜனங்களை நடத்திச் சென்றீர்  நீர் நல்லவர் சர்வ வல்லவர் என்றும் வாக்கு மாறாதவர் (2)
+
+உமக்கொப்பனவர் யார்? உமக்கொப்பனவர் யார்? வானத்திலும் பூமியிலும் உமக்கொப்பானவர் யார்?
+
+2. தூதர்கள் உண்ணும் உணவால் உந்தன் ஜனங்களை போஷித்தீரே உம்மைப்போல யாருண்டு இந்த ஜனங்களை நேசித்திட (2)
+
+உமக்கொப்பனவர் யார்? உமக்கொப்பனவர் யார்? வானத்திலும் பூமியிலும் உமக்கொப்பானவர் யார்?
+
+3. கன்மலையை நீர் பிளந்து உந்தன் ஜனங்களின் தாகம் தீர்த்தீர் உந்தன் நாமம் அதிசயம் இன்றும் அற்புதம் செய்திடுவீர் (2)
+
+உமக்கொப்பனவர் யார்? உமக்கொப்பனவர் யார்? வானத்திலும் பூமியிலும் உமக்கொப்பானவர் யார்?
+
+கர்த்தாவே தேவர்களில் உமக்கொப்பனவர் யார்? வானத்திலும் பூமியிலும் உமக்கொப்பானவர் யார்?"""
+
+        telugu_lyrics = """అగ్ని మండించు – నాలో అగ్ని మండించు (2)\nపరిశుద్ధాత్ముడా – నాలో అగ్ని మండించు (2)"""
+
+        save_to_local_cache(Song(id="ta_172", title="கர்த்தாவே தேவர்களில் உமக்கொப்பனவர் யார்?", language="tamil", number="172", lyrics=tamil_lyrics))
+        save_to_local_cache(Song(id="te_1", title="అగ్ని మండించు - Agni Mandinchu", language="telugu", composer="Freddy Paul", lyrics=telugu_lyrics))
+
