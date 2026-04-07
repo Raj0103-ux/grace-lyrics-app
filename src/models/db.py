@@ -1,7 +1,8 @@
 import sqlite3
 import os
 import time
-import requests
+import urllib.request
+import json
 from typing import List, Optional
 from src.models.song import Song
 
@@ -60,14 +61,6 @@ def toggle_favorite(song_id: str) -> bool:
     return False
 
 def get_songs_by_language(language: str, search_query: str = "") -> List[Song]:
-    """
-    Returns only songs already cached locally.
-    Wait! The Read-Through Cache architecture relies on knowing WHAT to search for.
-    If the app boots up and the user hasn't downloaded the latest index, they won't 
-    know what songs exist. We need to fetch the lightweight index from Firebase first on app boot.
-    For this simplified architecture, we will rely on admin pushing song IDs to a central 'index'.
-    For now, we return what is locally cached.
-    """
     conn = get_connection()
     c = conn.cursor()
     
@@ -87,54 +80,18 @@ def get_songs_by_language(language: str, search_query: str = "") -> List[Song]:
         ))
     return songs
 
-# --- LIVE FIREBASE INTEGRATION ---
+# --- LIVE FIREBASE INTEGRATION USING STANDARD LIBRARY (urllib) ---
 def fetch_from_cloud_api(song_id: str) -> Optional[Song]:
-    """
-    Fetches missing songs from Firebase Firestore live.
-    """
     print(f"--> [NETWORK] Fetching {song_id} from Firebase...")
     try:
-        response = requests.get(f"{FIRESTORE_URL}/{song_id}")
-        if response.status_code == 200:
-            doc = response.json()
-            fields = doc.get('fields', {})
-            
-            return Song(
-                id=song_id,
-                title=fields.get('title', {}).get('stringValue', ''),
-                language=fields.get('language', {}).get('stringValue', ''),
-                lyrics=fields.get('lyrics', {}).get('stringValue', '').replace('\\n', '\n'),
-                number=fields.get('number', {}).get('stringValue', None),
-                category=fields.get('category', {}).get('stringValue', None),
-                composer=fields.get('composer', {}).get('stringValue', None),
-                is_favorite=False
-            )
-        else:
-            print(f"--> [NETWORK ERROR] Code: {response.status_code}")
-    except Exception as e:
-        print(f"--> [NETWORK EXCEPTION] {e}")
-        
-    return None 
-
-def fetch_all_from_cloud() -> int:
-    """
-    Fetches all songs from Firebase and caches them immediately.
-    Useful for 'Sync Now' buttons or initial boot.
-    Returns number of new songs synced.
-    """
-    print("--> [NETWORK] Syncing all master data from Firebase...")
-    synced_count = 0
-    try:
-        response = requests.get(FIRESTORE_URL)
-        if response.status_code == 200:
-            data = response.json()
-            documents = data.get('documents', [])
-            for doc in documents:
-                name_path = doc.get('name', '')
-                song_id = name_path.split('/')[-1]
+        req = urllib.request.Request(f"{FIRESTORE_URL}/{song_id}")
+        with urllib.request.urlopen(req) as response:
+            if response.status == 200:
+                data = response.read().decode('utf-8')
+                doc = json.loads(data)
                 fields = doc.get('fields', {})
                 
-                song = Song(
+                return Song(
                     id=song_id,
                     title=fields.get('title', {}).get('stringValue', ''),
                     language=fields.get('language', {}).get('stringValue', ''),
@@ -144,26 +101,48 @@ def fetch_all_from_cloud() -> int:
                     composer=fields.get('composer', {}).get('stringValue', None),
                     is_favorite=False
                 )
+    except Exception as e:
+        print(f"--> [NETWORK EXCEPTION] {e}")
+        
+    return None 
+
+def fetch_all_from_cloud() -> int:
+    print("--> [NETWORK] Syncing all master data from Firebase...")
+    synced_count = 0
+    try:
+        req = urllib.request.Request(FIRESTORE_URL)
+        with urllib.request.urlopen(req) as response:
+            if response.status == 200:
+                data = response.read().decode('utf-8')
+                parsed_data = json.loads(data)
+                documents = parsed_data.get('documents', [])
                 
-                # Check if it exists locally first to avoid unnecessary writes,
-                # or just INSERT OR REPLACE which handles it efficiently.
-                save_to_local_cache(song)
-                synced_count += 1
-                
-            print(f"--> [SYNC COMPLETE] Downloaded {synced_count} songs to local device.")
+                for doc in documents:
+                    name_path = doc.get('name', '')
+                    song_id = name_path.split('/')[-1]
+                    fields = doc.get('fields', {})
+                    
+                    song = Song(
+                        id=song_id,
+                        title=fields.get('title', {}).get('stringValue', ''),
+                        language=fields.get('language', {}).get('stringValue', ''),
+                        lyrics=fields.get('lyrics', {}).get('stringValue', '').replace('\\n', '\n'),
+                        number=fields.get('number', {}).get('stringValue', None),
+                        category=fields.get('category', {}).get('stringValue', None),
+                        composer=fields.get('composer', {}).get('stringValue', None),
+                        is_favorite=False
+                    )
+                    
+                    save_to_local_cache(song)
+                    synced_count += 1
+                    
+                print(f"--> [SYNC COMPLETE] Downloaded {synced_count} songs locally.")
     except Exception as e:
         print(f"--> [SYNC EXCEPTION] {e}")
         
     return synced_count
 
 def get_song_by_id(song_id: str) -> Optional[Song]:
-    """
-    ARCHITECTURAL PATTERN: READ-THROUGH CACHE
-    1. Try to fetch from Local SQLite first. (Instant)
-    2. If missing, Fetch from Cloud API. (Network latency)
-    3. Save to Local SQLite securely immediately.
-    4. Return to UI.
-    """
     # 1. Local Cache Check
     conn = get_connection()
     c = conn.cursor()
@@ -172,18 +151,17 @@ def get_song_by_id(song_id: str) -> Optional[Song]:
     conn.close()
     
     if r:
-        print(f"--> [LOCAL] Cache hit for {song_id}. Instant load.")
+        print(f"--> [LOCAL] Cache hit for {song_id}")
         return Song(
             id=r[0], title=r[1], language=r[2], lyrics=r[3], 
             number=r[4], category=r[5], composer=r[6], is_favorite=bool(r[7])
         )
         
-    # 2. Network Fetch (Because it's not on the device yet)
+    # 2. Network Fetch 
     print(f"--> [CACHE MISS] Song {song_id} not locally found.")
     cloud_song = fetch_from_cloud_api(song_id)
     
     if cloud_song:
-        # 3. Save to local storage for next time
         save_to_local_cache(cloud_song)
         return cloud_song
         
