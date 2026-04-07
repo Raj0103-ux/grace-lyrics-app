@@ -10,8 +10,7 @@ def main(page: ft.Page):
     
     # Safely initialize the database inside the main thread!
     try:
-        db.init_db()
-        db.seed_mock_data()
+        db.init_db(page)
     except Exception as db_err:
         page.add(ft.Text(f"CRITICAL DB INIT ERROR: {db_err}", color=ft.colors.RED))
         return

@@ -2,30 +2,33 @@ import flet as ft
 from src.models.db import get_songs_by_language, get_song_by_id, toggle_favorite, fetch_all_from_cloud
 
 def create_song_list(page: ft.Page, language: str, search_query: str = ""):
-    songs = get_songs_by_language(language, search_query)
-    
-    if not songs:
-        return ft.Container(
-            content=ft.Text(f"No {language} songs found natively yet. Did you sync from the cloud?", color=page.theme.color_scheme.secondary),
-            alignment=ft.alignment.center,
-            padding=20
-        )
-    
-    list_view = ft.ListView(expand=True, spacing=10, padding=10)
-    for song in songs:
-        list_view.controls.append(
-            ft.Card(
-                content=ft.ListTile(
-                    leading=ft.Icon(ft.icons.MUSIC_NOTE, color=page.theme.color_scheme.secondary),
-                    title=ft.Text(f"{song.number}. {song.title}" if song.number else song.title, weight=ft.FontWeight.BOLD),
-                    subtitle=ft.Text(f"{len(song.lyrics.splitlines())} lines", color=page.theme.color_scheme.secondary),
-                    trailing=ft.Icon(ft.icons.FAVORITE if song.is_favorite else ft.icons.CHEVRON_RIGHT, 
-                                     color=ft.colors.RED_400 if song.is_favorite else None),
-                    on_click=lambda e, s=song: _navigate_to_song(page, s)
+    try:
+        songs = get_songs_by_language(page, language, search_query)
+        
+        if not songs:
+            return ft.Container(
+                content=ft.Text(f"No {language} songs found natively yet. Did you sync from the cloud?", color=page.theme.color_scheme.secondary),
+                alignment=ft.alignment.center,
+                padding=20
+            )
+        
+        list_view = ft.ListView(expand=True, spacing=10, padding=10)
+        for song in songs:
+            list_view.controls.append(
+                ft.Card(
+                    content=ft.ListTile(
+                        leading=ft.Icon(ft.icons.MUSIC_NOTE, color=page.theme.color_scheme.secondary),
+                        title=ft.Text(f"{song.number}. {song.title}" if song.number else song.title, weight=ft.FontWeight.BOLD),
+                        subtitle=ft.Text(f"{len(song.lyrics.splitlines())} lines", color=page.theme.color_scheme.secondary),
+                        trailing=ft.Icon(ft.icons.FAVORITE if song.is_favorite else ft.icons.CHEVRON_RIGHT, 
+                                         color=ft.colors.RED_400 if song.is_favorite else None),
+                        on_click=lambda e, s=song: _navigate_to_song(page, s)
+                    )
                 )
             )
-        )
-    return list_view
+        return list_view
+    except Exception as e:
+        return ft.Text(f"Error loading list: {e}", color=ft.colors.RED)
 
 def _navigate_to_song(page: ft.Page, song):
     page.go(f"/song/{song.id}")
@@ -106,7 +109,7 @@ class SongView(ft.View):
     def __init__(self, page: ft.Page, song_id: str):
         super().__init__(f"/song/{song_id}", [])
         self.page = page
-        self.song = get_song_by_id(song_id)
+        self.song = get_song_by_id(page, song_id)
         self.font_size = 18
         
         if not self.song:
@@ -167,18 +170,12 @@ class SongView(ft.View):
             self.page.update()
 
     def toggle_fav(self, e):
-        new_status = toggle_favorite(self.song.id)
+        new_status = toggle_favorite(self.page, self.song.id)
         self.song.is_favorite = new_status
         self.fav_icon.name = ft.icons.FAVORITE if new_status else ft.icons.FAVORITE_BORDER
         self.fav_icon.color = ft.colors.RED_400 if new_status else self.page.theme.color_scheme.secondary
         self.page.update()
 
-
-def get_home_view(page: ft.Page):
-    return HomeView(page)
-
-def get_song_view(page: ft.Page, song_id: str):
-    return SongView(page, song_id)
 
 class AdminView(ft.View):
     def __init__(self, page: ft.Page):
@@ -216,7 +213,7 @@ class AdminView(ft.View):
         self.page.update()
         
         try:
-            count = fetch_all_from_cloud()
+            count = fetch_all_from_cloud(self.page)
             self.status_text.value = f"Successfully synced {count} songs locally."
             self.status_text.color = ft.colors.GREEN
         except Exception as ex:
@@ -225,6 +222,11 @@ class AdminView(ft.View):
             
         self.page.update()
 
+def get_home_view(page: ft.Page):
+    return HomeView(page)
+
+def get_song_view(page: ft.Page, song_id: str):
+    return SongView(page, song_id)
+
 def get_admin_view(page: ft.Page):
     return AdminView(page)
-
