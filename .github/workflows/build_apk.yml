@@ -32,7 +32,7 @@ jobs:
         run: yes | flutter doctor --android-licenses
 
       - name: Install Flet CLI Stable
-        run: pip install flet-cli==0.23.1
+        run: pip install flet-cli==0.25.2
 
       - name: Build APK with Flet
         run: flet build apk --product gggm --org com.gggm
