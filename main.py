@@ -5,8 +5,6 @@ import threading
 import time
 import os
 import uuid
-from pypdf import PdfReader
-from pptx import Presentation
 
 # For native Windows picker (workaround for desktop)
 def native_pick_files():
@@ -178,15 +176,23 @@ def main(page: ft.Page):
                         with open(path, 'r', encoding='utf-8', errors='ignore') as file:
                             content = file.read()
                     elif name.lower().endswith(".pdf"):
-                        reader = PdfReader(path)
-                        for page_pdf in reader.pages:
-                            content += page_pdf.extract_text() + "\n"
+                        try:
+                            from pypdf import PdfReader
+                            reader = PdfReader(path)
+                            for page_pdf in reader.pages:
+                                content += page_pdf.extract_text() + "\n"
+                        except ImportError:
+                            content = "[PDF Library Error: Please rebuild APK with requirements]"
                     elif name.lower().endswith(".pptx"):
-                        prs = Presentation(path)
-                        for slide in prs.slides:
-                            for shape in slide.shapes:
-                                if hasattr(shape, "text"):
-                                    content += shape.text + "\n"
+                        try:
+                            from pptx import Presentation
+                            prs = Presentation(path)
+                            for slide in prs.slides:
+                                for shape in slide.shapes:
+                                    if hasattr(shape, "text"):
+                                        content += shape.text + "\n"
+                        except ImportError:
+                            content = "[PPTX Library Error: Please rebuild APK with requirements]"
                     
                     if content.strip():
                         # Push to cloud
