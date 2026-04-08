@@ -3,6 +3,28 @@ import json
 import urllib.request
 import threading
 import time
+import os
+import uuid
+from pypdf import PdfReader
+from pptx import Presentation
+
+# For native Windows picker (workaround for desktop)
+def native_pick_files():
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        # Ensure it stays on top
+        root.attributes("-topmost", True)
+        files = filedialog.askopenfilenames(
+            title="Select Files for Bulk Upload",
+            filetypes=[("Lyrics Documents", "*.txt;*.pdf;*.pptx"), ("All Files", "*.*")]
+        )
+        root.destroy()
+        return files
+    except:
+        return []
 
 # ===================== IN-MEMORY DATA STORE =====================
 SONGS = []
@@ -94,10 +116,119 @@ def cloud_sync():
 
 # ===================== MAIN APP =====================
 def main(page: ft.Page):
+    page.window_icon = os.path.join(os.getcwd(), "assets", "icon.png")
     page.title = "Grace Lyrics"
     page.theme_mode = ft.ThemeMode.LIGHT
-    page.bgcolor = "#F5F7FA" # Light silver/gray background
-    page.padding = 0
+    page.bgcolor = "#F5F7FA"
+
+    # ---- File Picker Service ----
+    picker = ft.FilePicker()
+    
+    async def process_bulk_upload(e):
+        selected_paths = []
+        
+        # Check platform
+        is_android = page.platform == ft.PagePlatform.ANDROID or page.platform == ft.PagePlatform.IOS
+        
+        if is_android:
+            # Use standard Flet Picker on Mobile
+            if picker not in page.overlay:
+                page.overlay.append(picker)
+                page.update()
+            
+            res = await picker.pick_files(
+                allow_multiple=True, 
+                allowed_extensions=["txt", "pdf", "pptx"],
+                file_type=ft.FilePickerFileType.CUSTOM
+            )
+            if res:
+                selected_paths = [f.path for f in res if f.path]
+        else:
+            # Use native Windows picker on Desktop to avoid "Unknown Control" error
+            status_in = getattr(page, "admin_status", None)
+            if status_in:
+                status_in.value = "Opening Windows File Selector..."
+                page.update()
+            
+            # This is a blocking call, so we run it in a way that doesn't freeze Flet UI
+            selected_paths = native_pick_files()
+
+        if not selected_paths:
+            status_in = getattr(page, "admin_status", None)
+            if status_in:
+                status_in.value = ""
+                page.update()
+            return
+        
+        status_in = getattr(page, "admin_status", None)
+        if status_in:
+            status_in.value = f"Processing {len(selected_paths)} files..."
+            status_in.color = "blue"
+            page.update()
+
+        def background_processing():
+            success_count = 0
+            for path in selected_paths:
+                try:
+                    name = os.path.basename(path)
+                    title = os.path.splitext(name)[0]
+                    content = ""
+                    
+                    if name.lower().endswith(".txt"):
+                        with open(path, 'r', encoding='utf-8', errors='ignore') as file:
+                            content = file.read()
+                    elif name.lower().endswith(".pdf"):
+                        reader = PdfReader(path)
+                        for page_pdf in reader.pages:
+                            content += page_pdf.extract_text() + "\n"
+                    elif name.lower().endswith(".pptx"):
+                        prs = Presentation(path)
+                        for slide in prs.slides:
+                            for shape in slide.shapes:
+                                if hasattr(shape, "text"):
+                                    content += shape.text + "\n"
+                    
+                    if content.strip():
+                        # Push to cloud
+                        sid = f"bk_{uuid.uuid4().hex[:8]}"
+                        document = {
+                            "fields": {
+                                "title": {"stringValue": title},
+                                "language": {"stringValue": getattr(page, "admin_lang", "tamil")},
+                                "number": {"stringValue": ""},
+                                "lyrics": {"stringValue": content.replace("\n", "\\n")},
+                                "category": {"stringValue": "General"},
+                                "composer": {"stringValue": "Unknown"}
+                            }
+                        }
+                        req = urllib.request.Request(
+                            f"{FIRESTORE_URL}/{sid}",
+                            data=json.dumps(document).encode("utf-8"),
+                            headers={"Content-Type": "application/json"},
+                            method="PATCH"
+                        )
+                        with urllib.request.urlopen(req) as r:
+                            if r.status == 200:
+                                success_count += 1
+                except Exception as ex:
+                    print(f"Error processing {path}: {ex}")
+            
+            if status_in:
+                status_in.value = f"Bulk Upload Complete! {success_count} songs added."
+                status_in.color = "green"
+                page.update()
+                # Refresh local cache in background
+                cloud_sync()
+                # Instead of closing, refresh the management list if visible
+                time.sleep(2)
+                show_admin_editor()
+
+        threading.Thread(target=background_processing, daemon=True).start()
+
+
+    # Use a hidden container for picker if needed, but overlay is better
+    # We will append it to overlay only when the Admin dashboard is opened to avoid the red screen on home
+
 
     try:
         seed_default_songs()
@@ -124,7 +255,7 @@ def main(page: ft.Page):
         try:
             c = cloud_sync()
             if c > 0:
-                page.run_task(refresh_ui)
+                show_home()
         finally:
             is_syncing[0] = False
 
@@ -235,10 +366,13 @@ def main(page: ft.Page):
             header = ft.Container(
                 content=ft.Row(
                     controls=[
-                        ft.Column([
-                            ft.Text("Grace Lyrics", size=24, weight=ft.FontWeight.BOLD, color="white"),
-                            ft.Text("Songs of Worship", size=12, color="#C5CAE9"),
-                        ], spacing=2),
+                        ft.Row([
+                            ft.Image(src="icon.png", width=40, height=40, border_radius=8),
+                            ft.Column([
+                                ft.Text("Grace Lyrics", size=24, weight=ft.FontWeight.BOLD, color="white"),
+                                ft.Text("Songs of Worship", size=12, color="#C5CAE9"),
+                            ], spacing=2),
+                        ], spacing=10),
                         ft.Row(
                             controls=[
                                 ft.IconButton(ft.Icons.SEARCH, icon_color="white", on_click=lambda e: toggle_search(e)),
@@ -250,8 +384,8 @@ def main(page: ft.Page):
                     alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                 ),
                 gradient=ft.LinearGradient(
-                    begin=ft.alignment.top_left,
-                    end=ft.alignment.bottom_right,
+                    begin=ft.alignment.Alignment(-1, -1),
+                    end=ft.alignment.Alignment(1, 1),
                     colors=["#3F51B5", "#7986CB"]
                 ),
                 padding=ft.Padding(left=20, right=10, top=20, bottom=20),
@@ -313,7 +447,11 @@ def main(page: ft.Page):
             if not song: return
 
             font_size = [18]
-            lyrics_widget = ft.Text(song["lyrics"], size=font_size[0], selectable=True, color="#37474F", line_height=1.5)
+            lyrics_text = song.get("lyrics", "")
+            if not lyrics_text:
+                lyrics_text = "[No lyrics content found in database]"
+            
+            lyrics_widget = ft.Text(lyrics_text, size=font_size[0], selectable=True, color="#37474F")
 
             def update_font(delta):
                 font_size[0] = max(10, min(40, font_size[0] + delta))
@@ -407,6 +545,28 @@ def main(page: ft.Page):
                             ft.Container(
                                 content=ft.Column(
                                     controls=[
+                                        ft.Text("App Appearance", size=24, weight=ft.FontWeight.BOLD, color="#1A237E"),
+                                        ft.Text("Current App Logo", size=14, color="#546E7A"),
+                                        ft.Container(height=10),
+                                        ft.Container(
+                                            content=ft.Image(src="icon.png", width=100, height=100, border_radius=15),
+                                            bgcolor="white",
+                                            padding=10,
+                                            border_radius=20,
+                                            shadow=ft.BoxShadow(blur_radius=10, color=ft.Colors.with_opacity(0.1, "black"))
+                                        ),
+                                        ft.Container(height=10),
+                                        ft.ElevatedButton(
+                                            content=ft.Row([ft.Icon(ft.Icons.LOCK), ft.Text("OPEN MASTER ADMIN PANEL")], alignment=ft.MainAxisAlignment.CENTER),
+                                            on_click=lambda e: show_login(),
+                                            height=50,
+                                            style=ft.ButtonStyle(
+                                                color="#3F51B5",
+                                                bgcolor="#E1E5F2",
+                                                shape=ft.RoundedRectangleBorder(radius=15),
+                                            )
+                                        ),
+                                        ft.Divider(height=40, color="#E8EAF6"),
                                         ft.Text("Cloud Sync", size=24, weight=ft.FontWeight.BOLD, color="#1A237E"),
                                         ft.Text("Update your song library with the latest lyrics from the server.", size=14, color="#546E7A"),
                                         ft.Container(height=20),
@@ -423,6 +583,7 @@ def main(page: ft.Page):
                                         ft.Container(height=15),
                                         status,
                                     ],
+                                    scroll=ft.ScrollMode.AUTO,
                                 ),
                                 padding=30,
                                 expand=True,
@@ -440,9 +601,216 @@ def main(page: ft.Page):
             page.add(ft.SafeArea(ft.Text(f"Settings error: {e}", color="red")))
             page.update()
 
+    # ---- ADMIN LOGIN SCREEN ----
+    def show_login():
+        user_field = ft.TextField(label="Username", border_radius=15)
+        pass_field = ft.TextField(label="Password", password=True, can_reveal_password=True, border_radius=15)
+        error_text = ft.Text("", color="red")
+
+        def attempt_login(e):
+            if user_field.value == "admin" and pass_field.value == "Grace@2024":
+                show_admin_editor()
+            else:
+                error_text.value = "Invalid credentials. Please try again."
+                page.update()
+
+        page.controls.clear()
+        page.add(
+            ft.SafeArea(
+                content=ft.Column(
+                    controls=[
+                        ft.Container(
+                            content=ft.Row([
+                                ft.IconButton(ft.Icons.ARROW_BACK, icon_color="white", on_click=lambda e: show_admin()),
+                                ft.Text("Admin Authentication", size=20, color="white", weight=ft.FontWeight.BOLD),
+                            ]),
+                            bgcolor="#3F51B5",
+                            padding=ft.Padding(left=5, right=5, top=10, bottom=10),
+                        ),
+                        ft.Container(
+                            content=ft.Column(
+                                controls=[
+                                    ft.Icon(ft.Icons.LOCK_PERSON, size=80, color="#3F51B5"),
+                                    ft.Text("Master Access", size=28, weight=ft.FontWeight.BOLD, color="#1A237E"),
+                                    ft.Text("Login to add or manage song lyrics.", color="#546E7A"),
+                                    ft.Container(height=20),
+                                    user_field,
+                                    pass_field,
+                                    error_text,
+                                    ft.Container(height=10),
+                                    ft.ElevatedButton(
+                                        "Login", on_click=attempt_login, width=float("inf"), height=50,
+                                        style=ft.ButtonStyle(bgcolor="#3F51B5", color="white", shape=ft.RoundedRectangleBorder(radius=15))
+                                    ),
+                                ],
+                                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                            ),
+                            padding=40,
+                        )
+                    ],
+                    spacing=0,
+                    expand=True,
+                ),
+                expand=True,
+            )
+        )
+        page.update()
+
+    # ---- ADMIN EDITOR (DASHBOARD) SCREEN ----
+    def show_admin_editor():
+        title_in = ft.TextField(label="Song Title", border_radius=12)
+        lang_in = ft.Dropdown(
+            label="Language",
+            options=[ft.dropdown.Option("tamil"), ft.dropdown.Option("telugu")],
+            border_radius=12,
+            value="tamil"
+        )
+        num_in = ft.TextField(label="Song Number (Optional)", border_radius=12)
+        lyrics_in = ft.TextField(label="Full Lyrics", multiline=True, min_lines=8, max_lines=15, border_radius=12)
+        status_in = ft.Text("", color="blue")
+        
+        # Save references for bulk upload
+        page.admin_status = status_in
+        page.admin_lang = lang_in.value
+
+        def push_to_cloud(e):
+            if not title_in.value or not lyrics_in.value:
+                status_in.value = "Error: Title and Lyrics are required."
+                status_in.color = "red"
+                page.update()
+                return
+
+            status_in.value = "Pushing to database..."
+            status_in.color = "blue"
+            page.update()
+
+            try:
+                import uuid
+                song_id = f"{lang_in.value[:2]}_{uuid.uuid4().hex[:8]}"
+                document = {
+                    "fields": {
+                        "title": {"stringValue": title_in.value},
+                        "language": {"stringValue": lang_in.value},
+                        "number": {"stringValue": num_in.value or ""},
+                        "lyrics": {"stringValue": lyrics_in.value.replace("\n", "\\n")},
+                        "category": {"stringValue": "General"},
+                        "composer": {"stringValue": "Unknown"}
+                    }
+                }
+                
+                req = urllib.request.Request(
+                    f"{FIRESTORE_URL}/{song_id}",
+                    data=json.dumps(document).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="PATCH"
+                )
+                with urllib.request.urlopen(req) as r:
+                    if r.status == 200:
+                        status_in.value = f"Success! Uploaded as {song_id}."
+                        status_in.color = "green"
+                        title_in.value = ""
+                        lyrics_in.value = ""
+                        num_in.value = ""
+                    else:
+                        status_in.value = f"Failed (HTTP {r.status})"
+                        status_in.color = "red"
+            except Exception as ex:
+                status_in.value = f"Error: {ex}"
+                status_in.color = "red"
+            page.update()
+
+        page.controls.clear()
+        page.add(
+            ft.SafeArea(
+                content=ft.Column(
+                    controls=[
+                        ft.Container(
+                            content=ft.Row([
+                                ft.IconButton(ft.Icons.ARROW_BACK, icon_color="white", on_click=lambda e: show_login()),
+                                ft.Text("Master Admin Dashboard", size=20, color="white", weight=ft.FontWeight.BOLD),
+                            ]),
+                            bgcolor="#3F51B5",
+                            padding=ft.Padding(left=5, right=5, top=10, bottom=10),
+                        ),
+                        ft.Container(
+                            content=ft.Column(
+                                controls=[
+                                    ft.Text("Add New Song", size=24, weight=ft.FontWeight.BOLD, color="#1A237E"),
+                                    title_in,
+                                    ft.Row([lang_in, num_in], spacing=10),
+                                    lyrics_in,
+                                    ft.ElevatedButton(
+                                        "UPLOAD TO CLOUD", on_click=push_to_cloud,
+                                        width=float("inf"), height=50,
+                                        style=ft.ButtonStyle(bgcolor="#3F51B5", color="white", shape=ft.RoundedRectangleBorder(radius=15))
+                                    ),
+                                    status_in,
+                                    ft.Divider(height=30, color="#E8EAF6"),
+                                    ft.Text("Bulk Upload (Options A)", size=18, weight=ft.FontWeight.BOLD, color="#1A237E"),
+                                    ft.Text("Upload multiple PDF, TXT, or PPTX files. Titles will be taken from filenames.", size=12, color="#546E7A"),
+                                    ft.ElevatedButton(
+                                        "SELECT FILES", icon=ft.Icons.FILE_UPLOAD,
+                                        on_click=lambda e: page.run_task(process_bulk_upload, e),
+                                        width=float("inf"),
+                                        style=ft.ButtonStyle(bgcolor="#E1E5F2", color="#3F51B5", shape=ft.RoundedRectangleBorder(radius=15))
+                                    ),
+                                    ft.Divider(height=40, color="#E8EAF6"),
+                                    ft.Text("Manage / Delete Songs", size=24, weight=ft.FontWeight.BOLD, color="#1A237E"),
+                                    ft.Text(f"Total Songs: {len(SONGS)}", size=14, color="#546E7A"),
+                                ] + [
+                                    ft.Container(
+                                        content=ft.Row([
+                                            ft.Column([
+                                                ft.Text(s["title"], weight=ft.FontWeight.BOLD, size=16),
+                                                ft.Text(f"ID: {s['id']} | Lang: {s['language']}", size=12, color="#78909C"),
+                                            ], expand=True),
+                                            ft.IconButton(
+                                                ft.Icons.DELETE_OUTLINE, 
+                                                icon_color="red", 
+                                                tooltip="Delete from Cloud",
+                                                on_click=lambda e, sid=s['id']: delete_song(sid)
+                                            ),
+                                        ]),
+                                        padding=15,
+                                        bgcolor="#F8F9FB",
+                                        border_radius=12,
+                                        border=ft.border.all(1, "#E8EAF6"),
+                                    ) for s in sorted(SONGS, key=lambda x: x["title"])[:50] # Show top 50
+                                ] + [
+                                    ft.Text("Showing first 50 songs. Use search for more.", size=12, italic=True) if len(SONGS) > 50 else ft.Container()
+                                ],
+                                scroll=ft.ScrollMode.AUTO,
+                                spacing=15,
+                            ),
+                            padding=20,
+                            expand=True,
+                        )
+                    ],
+                    spacing=0,
+                    expand=True,
+                ),
+                expand=True,
+            )
+        )
+        page.update()
+
+    def delete_song(sid):
+        def do_delete():
+            try:
+                req = urllib.request.Request(f"{FIRESTORE_URL}/{sid}", method="DELETE")
+                with urllib.request.urlopen(req) as r:
+                    if r.status == 200:
+                        cloud_sync() # Refresh locally
+                        show_admin_editor() # Refresh UI
+            except Exception as ex:
+                print(f"Delete error: {ex}")
+        
+        threading.Thread(target=do_delete, daemon=True).start()
+
     # ---- START ----
+
     show_home()
     # Trigger auto-sync in background
     threading.Thread(target=start_auto_sync, daemon=True).start()
 
-ft.app(main)
+ft.app(main, assets_dir="assets")
