@@ -1,12 +1,13 @@
 import flet as ft
 import json
 import urllib.request
+import threading
+import time
 
 # ===================== IN-MEMORY DATA STORE =====================
 SONGS = []
 
 FIRESTORE_URL = "https://firestore.googleapis.com/v1/projects/grace-lyrics-admin/databases/(default)/documents/songs"
-
 
 def seed_default_songs():
     global SONGS
@@ -30,11 +31,7 @@ def seed_default_songs():
                 "2. தூதர்கள் உண்ணும் உணவால்\n"
                 "உந்தன் ஜனங்களை போஷித்தீரே\n"
                 "உம்மைப்போல யாருண்டு\n"
-                "இந்த ஜனங்களை நேசித்திட (2)\n\n"
-                "3. கன்மலையை நீர் பிளந்து\n"
-                "உந்தன் ஜனங்களின் தாகம் தீர்த்தீர்\n"
-                "உந்தன் நாமம் அதிசயம்\n"
-                "இன்றும் அற்புதம் செய்திடுவீர் (2)"
+                "இந்த ஜனங்களை நேசித்திட (2)"
             ),
         },
         {
@@ -51,7 +48,6 @@ def seed_default_songs():
         },
     ]
 
-
 def get_filtered(lang, query=""):
     result = []
     for s in SONGS:
@@ -62,92 +58,137 @@ def get_filtered(lang, query=""):
         result.append(s)
     return sorted(result, key=lambda x: x["title"])
 
-
 def cloud_sync():
     global SONGS
     count = 0
-    req = urllib.request.Request(FIRESTORE_URL)
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        body = resp.read().decode("utf-8")
-        docs = json.loads(body).get("documents", [])
-        existing_ids = {s["id"] for s in SONGS}
-        for doc in docs:
-            sid = doc.get("name", "").split("/")[-1]
-            f = doc.get("fields", {})
-            song = {
-                "id": sid,
-                "title": f.get("title", {}).get("stringValue", ""),
-                "language": f.get("language", {}).get("stringValue", ""),
-                "lyrics": f.get("lyrics", {}).get("stringValue", "").replace("\\n", "\n"),
-                "is_favorite": False,
-            }
-            if sid in existing_ids:
-                for i, existing in enumerate(SONGS):
-                    if existing["id"] == sid:
-                        song["is_favorite"] = existing.get("is_favorite", False)
-                        SONGS[i] = song
-                        break
-            else:
-                SONGS.append(song)
-            count += 1
+    try:
+        req = urllib.request.Request(FIRESTORE_URL)
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            body = resp.read().decode("utf-8")
+            data = json.loads(body)
+            docs = data.get("documents", [])
+            
+            # Using a temp set to track favorites across sync
+            fav_ids = {s["id"] for s in SONGS if s.get("is_favorite", False)}
+            
+            new_songs = []
+            for doc in docs:
+                sid = doc.get("name", "").split("/")[-1]
+                fields = doc.get("fields", {})
+                
+                song = {
+                    "id": sid,
+                    "title": fields.get("title", {}).get("stringValue", "Untitled"),
+                    "language": fields.get("language", {}).get("stringValue", "tamil").lower(),
+                    "lyrics": fields.get("lyrics", {}).get("stringValue", "").replace("\\n", "\n"),
+                    "is_favorite": sid in fav_ids,
+                }
+                new_songs.append(song)
+                count += 1
+            
+            if new_songs:
+                SONGS = new_songs
+    except Exception as e:
+        print(f"Sync error: {e}")
     return count
-
 
 # ===================== MAIN APP =====================
 def main(page: ft.Page):
     page.title = "Grace Lyrics"
-    page.theme_mode = ft.ThemeMode.DARK
-    page.bgcolor = "#0D1117"
+    page.theme_mode = ft.ThemeMode.LIGHT
+    page.bgcolor = "#F5F7FA" # Light silver/gray background
     page.padding = 0
 
     try:
         seed_default_songs()
     except Exception as e:
-        page.add(ft.SafeArea(ft.Text(f"Seed error: {e}", color="red", selectable=True)))
+        page.add(ft.SafeArea(ft.Text(f"Initialization Error: {e}", color="red")))
         return
 
     # ---- State ----
     current_tab = [0]  # 0=Tamil, 1=Telugu
     search_query = [""]
     search_open = [False]
+    is_syncing = [False]
+
+    def refresh_ui():
+        try:
+            show_home()
+        except:
+            pass
+
+    def start_auto_sync():
+        if is_syncing[0]:
+            return
+        is_syncing[0] = True
+        try:
+            c = cloud_sync()
+            if c > 0:
+                page.run_task(refresh_ui)
+        finally:
+            is_syncing[0] = False
 
     # ---- Build song list ----
     def make_song_list(lang, query=""):
         songs = get_filtered(lang, query)
         if not songs:
             return ft.Container(
-                content=ft.Text(
-                    "No songs loaded.\nTap Settings > Sync to download.",
-                    text_align=ft.TextAlign.CENTER,
-                    color="#888888",
-                    size=16,
+                content=ft.Column(
+                    controls=[
+                        ft.Icon(ft.Icons.CLOUD_OFF, size=50, color="#B0BEC5"),
+                        ft.Text(
+                            "No songs found.\nChecking for updates...",
+                            text_align=ft.TextAlign.CENTER,
+                            color="#78909C",
+                            size=16,
+                        ),
+                    ],
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 ),
                 alignment=ft.alignment.Alignment(0, 0),
                 padding=40,
             )
-        col = ft.Column(spacing=6, scroll=ft.ScrollMode.AUTO, expand=True)
+        
+        col = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
         for s in songs:
             fav = s.get("is_favorite", False)
             col.controls.append(
                 ft.Container(
                     content=ft.Row(
                         controls=[
-                            ft.Icon(ft.Icons.MUSIC_NOTE, color="#7B8DB8", size=20),
-                            ft.Text(s["title"], expand=True, weight=ft.FontWeight.BOLD, size=15),
-                            ft.Icon(ft.Icons.FAVORITE, color="red", size=18) if fav else ft.Icon(ft.Icons.CHEVRON_RIGHT, color="#555555", size=18),
+                            ft.Container(
+                                content=ft.Icon(ft.Icons.MUSIC_NOTE, color="#3F51B5", size=22),
+                                padding=10,
+                                bgcolor="#E8EAF6",
+                                border_radius=10,
+                            ),
+                            ft.Column(
+                                controls=[
+                                    ft.Text(s["title"], weight=ft.FontWeight.BOLD, size=16, color="#263238"),
+                                    ft.Text(s["language"].capitalize(), size=12, color="#90A4AE"),
+                                ],
+                                expand=True,
+                                spacing=0,
+                            ),
+                            ft.Icon(ft.Icons.FAVORITE, color="#FF5252", size=22) if fav else ft.Icon(ft.Icons.CHEVRON_RIGHT, color="#CFD8DC", size=24),
                         ],
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
-                    padding=ft.Padding(left=16, right=16, top=14, bottom=14),
-                    border_radius=10,
-                    bgcolor="#1A1F2E",
+                    padding=ft.Padding(left=16, right=16, top=12, bottom=12),
+                    border_radius=15,
+                    bgcolor="white",
                     on_click=lambda e, sid=s["id"]: show_song(sid),
+                    shadow=ft.BoxShadow(
+                        blur_radius=10,
+                        color=ft.Colors.with_opacity(0.05, "black"),
+                        offset=ft.Offset(0, 4)
+                    ),
                     ink=True,
                 )
             )
         return col
 
-    # ---- Custom Tab Bar (no ft.Tabs needed) ----
+    # ---- Tab Bar ----
     def make_tab_bar():
         def select_tab(idx):
             current_tab[0] = idx
@@ -156,31 +197,105 @@ def main(page: ft.Page):
         tamil_active = current_tab[0] == 0
         telugu_active = current_tab[0] == 1
 
-        return ft.Row(
-            controls=[
-                ft.Container(
-                    content=ft.Text("Tamil", size=16, weight=ft.FontWeight.BOLD if tamil_active else ft.FontWeight.NORMAL, color="#C8D6F0" if tamil_active else "#666666"),
-                    bgcolor="#202A44" if tamil_active else "transparent",
-                    border_radius=8,
-                    padding=ft.Padding(left=24, right=24, top=10, bottom=10),
-                    on_click=lambda e: select_tab(0),
-                    expand=True,
-                    alignment=ft.alignment.Alignment(0, 0),
-                ),
-                ft.Container(
-                    content=ft.Text("Telugu", size=16, weight=ft.FontWeight.BOLD if telugu_active else ft.FontWeight.NORMAL, color="#C8D6F0" if telugu_active else "#666666"),
-                    bgcolor="#202A44" if telugu_active else "transparent",
-                    border_radius=8,
-                    padding=ft.Padding(left=24, right=24, top=10, bottom=10),
-                    on_click=lambda e: select_tab(1),
-                    expand=True,
-                    alignment=ft.alignment.Alignment(0, 0),
-                ),
-            ],
-            spacing=4,
+        return ft.Container(
+             padding=ft.Padding(left=10, right=10, top=5, bottom=5),
+             bgcolor="#E1E5F2",
+             border_radius=25,
+             content=ft.Row(
+                controls=[
+                    ft.Container(
+                        content=ft.Text("Tamil", size=14, weight=ft.FontWeight.BOLD if tamil_active else ft.FontWeight.NORMAL, color="white" if tamil_active else "#5C6BC0"),
+                        bgcolor="#3F51B5" if tamil_active else "transparent",
+                        border_radius=20,
+                        padding=ft.Padding(left=20, right=20, top=8, bottom=8),
+                        on_click=lambda e: select_tab(0),
+                        expand=True,
+                        alignment=ft.alignment.Alignment(0, 0),
+                    ),
+                    ft.Container(
+                        content=ft.Text("Telugu", size=14, weight=ft.FontWeight.BOLD if telugu_active else ft.FontWeight.NORMAL, color="white" if telugu_active else "#5C6BC0"),
+                        bgcolor="#3F51B5" if telugu_active else "transparent",
+                        border_radius=20,
+                        padding=ft.Padding(left=20, right=20, top=8, bottom=8),
+                        on_click=lambda e: select_tab(1),
+                        expand=True,
+                        alignment=ft.alignment.Alignment(0, 0),
+                    ),
+                ],
+                spacing=5,
+            )
         )
 
-    # ---- Search ----
+    # ---- HOME SCREEN ----
+    def show_home():
+        try:
+            lang = "tamil" if current_tab[0] == 0 else "telugu"
+            song_list = make_song_list(lang, search_query[0])
+
+            header = ft.Container(
+                content=ft.Row(
+                    controls=[
+                        ft.Column([
+                            ft.Text("Grace Lyrics", size=24, weight=ft.FontWeight.BOLD, color="white"),
+                            ft.Text("Songs of Worship", size=12, color="#C5CAE9"),
+                        ], spacing=2),
+                        ft.Row(
+                            controls=[
+                                ft.IconButton(ft.Icons.SEARCH, icon_color="white", on_click=lambda e: toggle_search(e)),
+                                ft.IconButton(ft.Icons.SETTINGS, icon_color="white", on_click=lambda e: show_admin()),
+                            ],
+                            spacing=0,
+                        ),
+                    ],
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                ),
+                gradient=ft.LinearGradient(
+                    begin=ft.alignment.top_left,
+                    end=ft.alignment.bottom_right,
+                    colors=["#3F51B5", "#7986CB"]
+                ),
+                padding=ft.Padding(left=20, right=10, top=20, bottom=20),
+            )
+
+            controls = [header]
+
+            if search_open[0]:
+                controls.append(
+                    ft.Container(
+                        content=ft.TextField(
+                            hint_text="Search song title...",
+                            on_change=on_search_change,
+                            value=search_query[0],
+                            autofocus=True,
+                            border_color="#C5CAE9",
+                            border_radius=15,
+                            prefix_icon=ft.Icons.SEARCH,
+                            text_size=14,
+                            bgcolor="white",
+                        ),
+                        padding=ft.Padding(left=16, right=16, top=10, bottom=10),
+                    )
+                )
+
+            controls.append(
+                ft.Container(
+                    content=make_tab_bar(),
+                    padding=ft.Padding(left=20, right=20, top=15, bottom=10),
+                )
+            )
+
+            controls.append(
+                ft.Container(content=song_list, padding=15, expand=True)
+            )
+
+            page.controls.clear()
+            page.add(ft.SafeArea(content=ft.Column(controls=controls, spacing=0, expand=True), expand=True))
+            page.update()
+        except Exception as e:
+            page.controls.clear()
+            page.add(ft.SafeArea(ft.Text(f"Home error: {e}", color="red")))
+            page.update()
+
     def on_search_change(e):
         search_query[0] = e.control.value
         show_home()
@@ -191,96 +306,19 @@ def main(page: ft.Page):
             search_query[0] = ""
         show_home()
 
-    # ---- HOME SCREEN ----
-    def show_home():
-        try:
-            lang = "tamil" if current_tab[0] == 0 else "telugu"
-            song_list = make_song_list(lang, search_query[0])
-
-            controls = [
-                # App Bar
-                ft.Container(
-                    content=ft.Row(
-                        controls=[
-                            ft.Text("Grace Lyrics", size=22, weight=ft.FontWeight.BOLD, color="#C8D6F0"),
-                            ft.Row(
-                                controls=[
-                                    ft.IconButton(ft.Icons.SEARCH, icon_color="#C8D6F0", on_click=toggle_search),
-                                    ft.IconButton(ft.Icons.SETTINGS, icon_color="#C8D6F0", on_click=lambda e: show_admin()),
-                                ],
-                                spacing=0,
-                            ),
-                        ],
-                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                    ),
-                    bgcolor="#202A44",
-                    padding=ft.Padding(left=16, right=16, top=10, bottom=10),
-                ),
-            ]
-
-            # Search bar
-            if search_open[0]:
-                controls.append(
-                    ft.Container(
-                        content=ft.TextField(
-                            hint_text="Search song title...",
-                            on_change=on_search_change,
-                            value=search_query[0],
-                            autofocus=True,
-                            border_color="transparent",
-                            text_size=14,
-                        ),
-                        padding=ft.Padding(left=16, right=16, top=4, bottom=4),
-                    )
-                )
-
-            # Tab bar
-            controls.append(
-                ft.Container(
-                    content=make_tab_bar(),
-                    padding=ft.Padding(left=12, right=12, top=6, bottom=6),
-                    bgcolor="#111520",
-                )
-            )
-
-            # Song list
-            controls.append(
-                ft.Container(content=song_list, padding=10, expand=True)
-            )
-
-            page.controls.clear()
-            page.add(ft.SafeArea(content=ft.Column(controls=controls, spacing=0, expand=True), expand=True))
-            page.update()
-        except Exception as e:
-            page.controls.clear()
-            page.add(ft.SafeArea(ft.Text(f"Home error: {e}", color="red", selectable=True)))
-            page.update()
-
     # ---- SONG DETAIL SCREEN ----
     def show_song(song_id):
         try:
-            song = None
-            for s in SONGS:
-                if s["id"] == song_id:
-                    song = s
-                    break
-            if not song:
-                return
+            song = next((s for s in SONGS if s["id"] == song_id), None)
+            if not song: return
 
             font_size = [18]
-            lyrics_widget = ft.Text(song["lyrics"], size=font_size[0], selectable=True, color="#E0E0E0")
+            lyrics_widget = ft.Text(song["lyrics"], size=font_size[0], selectable=True, color="#37474F", line_height=1.5)
 
-            def inc_font(e):
-                if font_size[0] < 40:
-                    font_size[0] += 2
-                    lyrics_widget.size = font_size[0]
-                    page.update()
-
-            def dec_font(e):
-                if font_size[0] > 10:
-                    font_size[0] -= 2
-                    lyrics_widget.size = font_size[0]
-                    page.update()
+            def update_font(delta):
+                font_size[0] = max(10, min(40, font_size[0] + delta))
+                lyrics_widget.size = font_size[0]
+                page.update()
 
             def toggle_fav(e):
                 song["is_favorite"] = not song.get("is_favorite", False)
@@ -293,35 +331,33 @@ def main(page: ft.Page):
                 ft.SafeArea(
                     content=ft.Column(
                         controls=[
-                            # Top bar
                             ft.Container(
                                 content=ft.Row(
                                     controls=[
-                                        ft.IconButton(ft.Icons.ARROW_BACK, icon_color="#C8D6F0", on_click=lambda e: show_home()),
-                                        ft.Text(song["title"], size=14, color="#C8D6F0", expand=True, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
-                                        ft.IconButton(ft.Icons.TEXT_DECREASE, icon_color="#C8D6F0", on_click=dec_font),
-                                        ft.IconButton(ft.Icons.TEXT_INCREASE, icon_color="#C8D6F0", on_click=inc_font),
-                                        ft.IconButton(
-                                            ft.Icons.FAVORITE if is_fav else ft.Icons.FAVORITE_BORDER,
-                                            icon_color="red" if is_fav else "#888888",
-                                            on_click=toggle_fav,
-                                        ),
+                                        ft.IconButton(ft.Icons.ARROW_BACK, icon_color="white", on_click=lambda e: show_home()),
+                                        ft.Text(song["title"], size=16, color="white", weight=ft.FontWeight.BOLD, expand=True, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+                                        ft.Row([
+                                            ft.IconButton(ft.Icons.REMOVE_CIRCLE_OUTLINE, icon_color="white", on_click=lambda e: update_font(-2)),
+                                            ft.IconButton(ft.Icons.ADD_CIRCLE_OUTLINE, icon_color="white", on_click=lambda e: update_font(2)),
+                                            ft.IconButton(ft.Icons.FAVORITE if is_fav else ft.Icons.FAVORITE_BORDER, icon_color="#FFCDD2" if is_fav else "white", on_click=toggle_fav),
+                                        ], spacing=0)
                                     ],
                                 ),
-                                bgcolor="#202A44",
-                                padding=ft.Padding(left=4, right=4, top=4, bottom=4),
+                                bgcolor="#3F51B5",
+                                padding=ft.Padding(left=5, right=5, top=5, bottom=5),
                             ),
-                            # Lyrics body
                             ft.Container(
                                 content=ft.Column(
                                     controls=[
-                                        ft.Text(song["title"], size=20, weight=ft.FontWeight.BOLD, color="#7B8DB8"),
-                                        ft.Divider(color="#333333"),
+                                        ft.Text(song["title"], size=22, weight=ft.FontWeight.BOLD, color="#1A237E"),
+                                        ft.Divider(color="#E8EAF6", height=30),
                                         lyrics_widget,
+                                        ft.Container(height=50),
                                     ],
                                     scroll=ft.ScrollMode.AUTO,
                                 ),
-                                padding=20,
+                                padding=25,
+                                bgcolor="white",
                                 expand=True,
                             ),
                         ],
@@ -334,25 +370,25 @@ def main(page: ft.Page):
             page.update()
         except Exception as e:
             page.controls.clear()
-            page.add(ft.SafeArea(ft.Text(f"Song error: {e}", color="red", selectable=True)))
+            page.add(ft.SafeArea(ft.Text(f"Song detail error: {e}", color="red")))
             page.update()
 
     # ---- ADMIN / SYNC SCREEN ----
     def show_admin():
         try:
-            status = ft.Text("Ready to sync.", color="green", size=14)
+            status = ft.Text("Ready to sync.", color="#43A047", size=14)
 
             def do_sync(e):
                 status.value = "Syncing from cloud..."
-                status.color = "#4488FF"
+                status.color = "#3F51B5"
                 page.update()
                 try:
                     c = cloud_sync()
-                    status.value = f"Done! Synced {c} songs from cloud."
-                    status.color = "green"
+                    status.value = f"Success! {c} songs updated."
+                    status.color = "#43A047"
                 except Exception as ex:
                     status.value = f"Sync failed: {ex}"
-                    status.color = "red"
+                    status.color = "#E53935"
                 page.update()
 
             page.controls.clear()
@@ -361,27 +397,34 @@ def main(page: ft.Page):
                     content=ft.Column(
                         controls=[
                             ft.Container(
-                                content=ft.Row(
-                                    controls=[
-                                        ft.IconButton(ft.Icons.ARROW_BACK, icon_color="#C8D6F0", on_click=lambda e: show_home()),
-                                        ft.Text("Cloud Sync", size=18, color="#C8D6F0", weight=ft.FontWeight.BOLD),
-                                    ],
-                                ),
-                                bgcolor="#202A44",
-                                padding=ft.Padding(left=4, right=4, top=10, bottom=10),
+                                content=ft.Row([
+                                    ft.IconButton(ft.Icons.ARROW_BACK, icon_color="white", on_click=lambda e: show_home()),
+                                    ft.Text("Settings", size=20, color="white", weight=ft.FontWeight.BOLD),
+                                ]),
+                                bgcolor="#3F51B5",
+                                padding=ft.Padding(left=5, right=5, top=10, bottom=10),
                             ),
                             ft.Container(
                                 content=ft.Column(
                                     controls=[
-                                        ft.Text("Download Songs", size=22, weight=ft.FontWeight.BOLD),
-                                        ft.Text("Tap the button below to download the latest songs pushed by the admin.", size=14, color="#AAAAAA"),
-                                        ft.Container(height=10),
-                                        ft.ElevatedButton("Sync Now", on_click=do_sync),
-                                        ft.Container(height=10),
+                                        ft.Text("Cloud Sync", size=24, weight=ft.FontWeight.BOLD, color="#1A237E"),
+                                        ft.Text("Update your song library with the latest lyrics from the server.", size=14, color="#546E7A"),
+                                        ft.Container(height=20),
+                                        ft.ElevatedButton(
+                                            content=ft.Row([ft.Icon(ft.Icons.SYNC), ft.Text("SYNC NOW")], alignment=ft.MainAxisAlignment.CENTER),
+                                            on_click=do_sync,
+                                            height=50,
+                                            style=ft.ButtonStyle(
+                                                color="white",
+                                                bgcolor="#3F51B5",
+                                                shape=ft.RoundedRectangleBorder(radius=15),
+                                            )
+                                        ),
+                                        ft.Container(height=15),
                                         status,
                                     ],
                                 ),
-                                padding=24,
+                                padding=30,
                                 expand=True,
                             ),
                         ],
@@ -394,11 +437,12 @@ def main(page: ft.Page):
             page.update()
         except Exception as e:
             page.controls.clear()
-            page.add(ft.SafeArea(ft.Text(f"Admin error: {e}", color="red", selectable=True)))
+            page.add(ft.SafeArea(ft.Text(f"Settings error: {e}", color="red")))
             page.update()
 
     # ---- START ----
     show_home()
-
+    # Trigger auto-sync in background
+    threading.Thread(target=start_auto_sync, daemon=True).start()
 
 ft.app(main)
