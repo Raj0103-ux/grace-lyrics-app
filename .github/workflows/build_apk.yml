@@ -34,23 +34,15 @@ jobs:
       - name: Install Latest Flet CLI
         run: pip install flet-cli==0.83.1
 
-      - name: Build APK with Sed Replacement
+      - name: Final Build
         run: |
-          # Create dummy assets to prevent stat errors
+          # Ensure assets folder exists for icons
           mkdir -p assets
-          # Run build but don't exit on error (let name bug happen)
-          flet build apk --product gggm --org com.gggm || true
-          
-          echo "Applying surgically precise Sed Replacement..."
-          sed -i 's/name: .*/name: gggm/' build/flutter/pubspec.yaml
-          
-          cd build/flutter
-          flutter pub get
-          flutter build apk --release
-          cp build/app/outputs/flutter-apk/app-release.apk ${{ github.workspace }}/gggm.apk
+          # Run the clean build
+          flet build apk --product gggm --org com.gggm
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: grace-lyrics-apk
-          path: gggm.apk
+          path: build/apk/*.apk
