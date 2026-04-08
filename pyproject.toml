@@ -1,8 +1,8 @@
 [project]
-name = "gracelyrics"
+name = "gggm"
 version = "1.0.0"
 
 [tool.flet]
-product = "gracelyrics"
-org = "com.gracelyrics"
+product = "GGGM"
+org = "com.gggm"
 build_number = 1

@@ -115,7 +115,7 @@ def cloud_sync():
 # ===================== MAIN APP =====================
 def main(page: ft.Page):
     page.window_icon = os.path.join(os.getcwd(), "assets", "icon.png")
-    page.title = "Grace Lyrics"
+    page.title = "GGGM"
     page.theme_mode = ft.ThemeMode.LIGHT
     page.bgcolor = "#F5F7FA"
 
