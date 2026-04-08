@@ -34,12 +34,15 @@ jobs:
       - name: Install Latest Flet CLI
         run: pip install flet-cli==0.83.1
 
-      - name: Build APK with Shielded Workspace
+      - name: Build APK with Emergency Surgery (Fresh Project)
         run: |
-          mkdir ../gggm_shield
-          cp -r . ../gggm_shield
-          cd ../gggm_shield
-          flet build apk --project . --product gggm --module-name main
+          flet create gggm_app
+          cp -r assets gggm_app/
+          cp main.py gggm_app/
+          cp requirements.txt gggm_app/
+          cp flet.yaml gggm_app/
+          cd gggm_app
+          flet build apk --product gggm --org com.gggm
           mv build/apk/gggm.apk ${{ github.workspace }}/gggm.apk
 
       - name: Upload APK Artifact
