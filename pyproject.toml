@@ -1,0 +1,5 @@
+[tool.flet]
+product = "gracelyrics"
+org = "com.example.gracelyrics"
+version = "1.0.0"
+build_number = 1

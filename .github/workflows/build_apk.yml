@@ -34,7 +34,7 @@ jobs:
           channel: 'stable'
 
       - name: Build APK with Flet
-        run: flet build apk --project . --org com.example.gracelyrics --product gracelyrics --build-version "1.0.0" --build-number 1
+        run: flet build apk --project .
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
