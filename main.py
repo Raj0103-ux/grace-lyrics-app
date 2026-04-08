@@ -122,7 +122,7 @@ def main(page: ft.Page):
                     color="#888888",
                     size=16,
                 ),
-                alignment=ft.alignment.center,
+                alignment=ft.alignment.Alignment(0, 0),
                 padding=40,
             )
         col = ft.Column(spacing=6, scroll=ft.ScrollMode.AUTO, expand=True)
@@ -138,7 +138,7 @@ def main(page: ft.Page):
                         ],
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
-                    padding=ft.padding.symmetric(horizontal=16, vertical=14),
+                    padding=ft.Padding(left=16, right=16, top=14, bottom=14),
                     border_radius=10,
                     bgcolor="#1A1F2E",
                     on_click=lambda e, sid=s["id"]: show_song(sid),
@@ -162,19 +162,19 @@ def main(page: ft.Page):
                     content=ft.Text("Tamil", size=16, weight=ft.FontWeight.BOLD if tamil_active else ft.FontWeight.NORMAL, color="#C8D6F0" if tamil_active else "#666666"),
                     bgcolor="#202A44" if tamil_active else "transparent",
                     border_radius=8,
-                    padding=ft.padding.symmetric(horizontal=24, vertical=10),
+                    padding=ft.Padding(left=24, right=24, top=10, bottom=10),
                     on_click=lambda e: select_tab(0),
                     expand=True,
-                    alignment=ft.alignment.center,
+                    alignment=ft.alignment.Alignment(0, 0),
                 ),
                 ft.Container(
                     content=ft.Text("Telugu", size=16, weight=ft.FontWeight.BOLD if telugu_active else ft.FontWeight.NORMAL, color="#C8D6F0" if telugu_active else "#666666"),
                     bgcolor="#202A44" if telugu_active else "transparent",
                     border_radius=8,
-                    padding=ft.padding.symmetric(horizontal=24, vertical=10),
+                    padding=ft.Padding(left=24, right=24, top=10, bottom=10),
                     on_click=lambda e: select_tab(1),
                     expand=True,
-                    alignment=ft.alignment.center,
+                    alignment=ft.alignment.Alignment(0, 0),
                 ),
             ],
             spacing=4,
@@ -214,7 +214,7 @@ def main(page: ft.Page):
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                     ),
                     bgcolor="#202A44",
-                    padding=ft.padding.symmetric(horizontal=16, vertical=10),
+                    padding=ft.Padding(left=16, right=16, top=10, bottom=10),
                 ),
             ]
 
@@ -230,7 +230,7 @@ def main(page: ft.Page):
                             border_color="transparent",
                             text_size=14,
                         ),
-                        padding=ft.padding.symmetric(horizontal=16, vertical=4),
+                        padding=ft.Padding(left=16, right=16, top=4, bottom=4),
                     )
                 )
 
@@ -238,7 +238,7 @@ def main(page: ft.Page):
             controls.append(
                 ft.Container(
                     content=make_tab_bar(),
-                    padding=ft.padding.symmetric(horizontal=12, vertical=6),
+                    padding=ft.Padding(left=12, right=12, top=6, bottom=6),
                     bgcolor="#111520",
                 )
             )
@@ -309,7 +309,7 @@ def main(page: ft.Page):
                                     ],
                                 ),
                                 bgcolor="#202A44",
-                                padding=ft.padding.symmetric(horizontal=4, vertical=4),
+                                padding=ft.Padding(left=4, right=4, top=4, bottom=4),
                             ),
                             # Lyrics body
                             ft.Container(
@@ -368,7 +368,7 @@ def main(page: ft.Page):
                                     ],
                                 ),
                                 bgcolor="#202A44",
-                                padding=ft.padding.symmetric(horizontal=4, vertical=10),
+                                padding=ft.Padding(left=4, right=4, top=10, bottom=10),
                             ),
                             ft.Container(
                                 content=ft.Column(
