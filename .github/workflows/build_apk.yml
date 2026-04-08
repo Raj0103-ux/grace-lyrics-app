@@ -33,12 +33,12 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Build APK with Flet (External Workspace)
+      - name: Build APK with Flet (Final Shield)
         run: |
-          mkdir ../gggm_workspace
-          cp -r . ../gggm_workspace
-          cd ../gggm_workspace
-          flet build apk --project . --product gggm --org com.gggm --module-name main
+          mkdir ../gggm_final
+          cp -r . ../gggm_final
+          cd ../gggm_final
+          flet build apk --project . --product gggm --module-name main
           mv build/apk/gggm.apk ${{ github.workspace }}/gggm.apk
 
       - name: Upload APK Artifact
