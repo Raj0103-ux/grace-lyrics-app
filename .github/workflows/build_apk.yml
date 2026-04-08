@@ -1,5 +1,4 @@
 name: Build Android APK
-
 on:
   push:
     branches:
@@ -9,9 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Repository
+      - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -19,10 +17,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Flet
-        run: pip install flet==0.81.0 pypdf python-pptx
-
-      - name: Setup Java JDK
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
@@ -33,16 +28,17 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Build APK with Flet (Final Shield)
-        run: |
-          mkdir ../gggm_final
-          cp -r . ../gggm_final
-          cd ../gggm_final
-          flet build apk --project . --product gggm --module-name main
-          mv build/apk/gggm.apk ${{ github.workspace }}/gggm.apk
+      - name: Accept Android Licenses
+        run: yes | flutter doctor --android-licenses
+
+      - name: Install Flet CLI Stable
+        run: pip install flet-cli==0.23.1
+
+      - name: Build APK with Flet
+        run: flet build apk --product gggm --org com.gggm
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: grace-lyrics-apk
-          path: gggm.apk
+          path: build/apk/*.apk
