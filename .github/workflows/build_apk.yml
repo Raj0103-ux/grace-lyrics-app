@@ -33,11 +33,16 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Build APK with Flet
-        run: flet build apk --project . --product gggm --org com.gggm --module-name main
+      - name: Build APK with Flet (Valid Identifier Workspace)
+        run: |
+          mkdir build_dir
+          cp -r . build_dir/gggm
+          cd build_dir/gggm
+          flet build apk --project . --product gggm --org com.gggm --module-name main
+          mv build/apk/gggm.apk ../../gggm.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: grace-lyrics-apk
-          path: build/apk/*.apk
+          path: gggm.apk
