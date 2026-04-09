@@ -6,7 +6,8 @@ from typing import List, Optional
 from src.models.song import Song
 
 # Cloudflare Sync Config
-SYNC_URL = "https://gggm-api.raj.workers.dev/songs" # Placeholder for your actual Worker URL
+FIRESTORE_URL = "https://gggm-admin.rajhanoch24.workers.dev"
+SYNC_URL = f"{FIRESTORE_URL}/songs"
 
 # Find a writable directory - try multiple fallbacks
 def _get_data_file():

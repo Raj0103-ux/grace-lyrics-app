@@ -27,7 +27,7 @@ def native_pick_files():
 # ===================== IN-MEMORY DATA STORE =====================
 SONGS = []
 
-FIRESTORE_URL = "https://firestore.googleapis.com/v1/projects/grace-lyrics-admin/databases/(default)/documents/songs"
+FIRESTORE_URL = "https://gggm-admin.rajhanoch24.workers.dev"
 
 def seed_default_songs():
     global SONGS
@@ -82,32 +82,29 @@ def cloud_sync():
     global SONGS
     count = 0
     try:
-        req = urllib.request.Request(FIRESTORE_URL)
+        # Fetch from our new Cloudflare /songs endpoint
+        req = urllib.request.Request(f"{FIRESTORE_URL}/songs")
         with urllib.request.urlopen(req, timeout=15) as resp:
             body = resp.read().decode("utf-8")
-            data = json.loads(body)
-            docs = data.get("documents", [])
+            cloud_list = json.loads(body)
             
-            # Using a temp set to track favorites across sync
-            fav_ids = {s["id"] for s in SONGS if s.get("is_favorite", False)}
-            
-            new_songs = []
-            for doc in docs:
-                sid = doc.get("name", "").split("/")[-1]
-                fields = doc.get("fields", {})
+            # Simple list of dicts directly from Cloudflare D1
+            if isinstance(cloud_list, list):
+                fav_ids = {s["id"] for s in SONGS if s.get("is_favorite", False)}
+                new_songs = []
+                for s in cloud_list:
+                    song = {
+                        "id": str(s.get("id")),
+                        "title": s.get("title", "Untitled"),
+                        "language": s.get("language", "tamil").lower(),
+                        "lyrics": s.get("lyrics", ""),
+                        "is_favorite": str(s.get("id")) in fav_ids,
+                    }
+                    new_songs.append(song)
                 
-                song = {
-                    "id": sid,
-                    "title": fields.get("title", {}).get("stringValue", "Untitled"),
-                    "language": fields.get("language", {}).get("stringValue", "tamil").lower(),
-                    "lyrics": fields.get("lyrics", {}).get("stringValue", "").replace("\\n", "\n"),
-                    "is_favorite": sid in fav_ids,
-                }
-                new_songs.append(song)
-                count += 1
-            
-            if new_songs:
-                SONGS = new_songs
+                if new_songs:
+                    SONGS = new_songs
+                    count = len(SONGS)
     except Exception as e:
         print(f"Sync error: {e}")
     return count
@@ -784,7 +781,9 @@ def main(page: ft.Page):
     def delete_song(sid):
         def do_delete():
             try:
-                req = urllib.request.Request(f"{FIRESTORE_URL}/{sid}", method="DELETE")
+                # Use our new Cloudflare /delete endpoint
+                data = json.dumps({"id": sid}).encode("utf-8")
+                req = urllib.request.Request(f"{FIRESTORE_URL}/delete", data=data, method="POST")
                 with urllib.request.urlopen(req) as r:
                     if r.status == 200:
                         cloud_sync() # Refresh locally
