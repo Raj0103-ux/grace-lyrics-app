@@ -115,9 +115,32 @@ def cloud_sync():
 
 # ===================== MAIN APP =====================
 def main(page: ft.Page):
-    page.window_icon = os.path.join(os.getcwd(), "assets", "icon.png")
-    page.title = "GGGM"
+    page.title = "GGGM - Grace Lyrics"
     page.theme_mode = ft.ThemeMode.LIGHT
+    page.window_width = 400
+    page.window_height = 800
+    
+    # Simple Navigation History to prevent app closure on back-swipe
+    history_stack = ["home"]
+
+    def on_back_button(e):
+        if len(history_stack) > 1:
+            history_stack.pop() # Remove current view
+            prev_view = history_stack[-1]
+            if prev_view == "home":
+                show_home()
+            elif prev_view == "admin":
+                show_admin()
+            elif prev_view == "admin_editor":
+                show_admin_editor()
+            # If it's a song index, we would've stored it
+            elif prev_view.startswith("song:"):
+                show_song(prev_view.split(":")[1])
+        else:
+            # Already at home, allow closure or just stay
+            pass
+            
+    page.on_back_button = on_back_button
     page.bgcolor = "#F5F7FA"
 
     # ---- File Picker Service ----
@@ -449,6 +472,7 @@ def main(page: ft.Page):
 
     # ---- SONG DETAIL SCREEN ----
     def show_song(song_id):
+        if history_stack[-1] != f"song:{song_id}": history_stack.append(f"song:{song_id}")
         try:
             song = next((s for s in SONGS if s["id"] == song_id), None)
             if not song: return
@@ -520,6 +544,7 @@ def main(page: ft.Page):
 
     # ---- ADMIN / SYNC SCREEN ----
     def show_admin():
+        if history_stack[-1] != "admin": history_stack.append("admin")
         try:
             status = ft.Text("Ready to sync.", color="#43A047", size=14)
 
@@ -610,7 +635,8 @@ def main(page: ft.Page):
 
     # ---- ADMIN LOGIN SCREEN ----
     def show_login():
-        user_field = ft.TextField(label="Username", border_radius=15)
+        if history_stack[-1] != "login": history_stack.append("login")
+        user_field = ft.TextField(label="Username", border_radius=12, prefix_icon=ft.Icons.PERSON)
         pass_field = ft.TextField(label="Password", password=True, can_reveal_password=True, border_radius=15)
         error_text = ft.Text("", color="red")
 
@@ -665,6 +691,7 @@ def main(page: ft.Page):
 
     # ---- ADMIN EDITOR (DASHBOARD) SCREEN ----
     def show_admin_editor():
+        if history_stack[-1] != "admin_editor": history_stack.append("admin_editor")
         title_in = ft.TextField(label="Song Title", border_radius=12)
         lang_in = ft.Dropdown(
             label="Language",
@@ -742,23 +769,6 @@ def main(page: ft.Page):
                         ft.Container(
                             content=ft.Column(
                                 controls=[
-                                    ft.Text("ACCESS WEB ADMIN AT:", size=12, color="#78909C", weight=ft.FontWeight.BOLD),
-                                    ft.Row([
-                                        ft.Icon(ft.Icons.LANGUAGE, size=18, color="#3F51B5"),
-                                        ft.Text(
-                                            "https://raj0103-ux.github.io/grace-lyrics-app/",
-                                            size=16,
-                                            color="#3F51B5",
-                                            weight=ft.FontWeight.BOLD,
-                                            spans=[
-                                                ft.TextSpan(
-                                                    "(Open in Browser)",
-                                                    style=ft.TextStyle(decoration=ft.TextDecoration.UNDERLINE, size=12),
-                                                    on_click=lambda _: page.launch_url("https://raj0103-ux.github.io/grace-lyrics-app/", web_window_name="_blank")
-                                                )
-                                            ]
-                                        ),
-                                    ], alignment=ft.MainAxisAlignment.CENTER),
                                     ft.Divider(height=20, color="#E8EAF6"),
                                     ft.Text("Manage / Delete Songs", size=24, weight=ft.FontWeight.BOLD, color="#1A237E"),
                                     ft.Text("Deletions are permanent and sync to all users.", size=12, color="#546E7A"),
