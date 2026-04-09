@@ -39,7 +39,8 @@ jobs:
           # Ensure assets folder exists for icons
           mkdir -p assets
           # Run the clean build with proper branding (picks up assets automatically)
-          flet build apk --product "GGGM" --org com.gggm
+          # Build specifically for arm64-v8a to minimize size (most common for modern phones)
+          flet build apk --project GGGM --org com.grace.lyrics --arch arm64-v8a
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4

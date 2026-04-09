@@ -741,7 +741,7 @@ def main(page: ft.Page):
                                     ft.ElevatedButton(
                                         "GO TO WEB ADMIN", 
                                         icon=ft.Icons.WEB,
-                                        on_click=lambda _: page.launch_url("https://raj0103-ux.github.io/grace-lyrics-app/"),
+                                        on_click=lambda _: page.launch_url("https://raj0103-ux.github.io/grace-lyrics-app/", web_window_name="_blank"),
                                         width=float("inf"),
                                         style=ft.ButtonStyle(bgcolor="#3F51B5", color="white", shape=ft.RoundedRectangleBorder(radius=10))
                                     ),
