@@ -5,9 +5,8 @@ import urllib.request
 from typing import List, Optional
 from src.models.song import Song
 
-# Firebase config
-PROJECT_ID = "grace-lyrics-admin"
-FIRESTORE_URL = f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/databases/(default)/documents/songs"
+# Cloudflare Sync Config
+SYNC_URL = "https://gggm-api.raj.workers.dev/songs" # Placeholder for your actual Worker URL
 
 # Find a writable directory - try multiple fallbacks
 def _get_data_file():
@@ -101,29 +100,40 @@ def get_song_by_id(song_id: str) -> Optional[Song]:
         return cloud
     return None
 
-def fetch_from_cloud_api(song_id: str) -> Optional[Song]:
-    try:
-        req = urllib.request.Request(f"{FIRESTORE_URL}/{song_id}")
-        with urllib.request.urlopen(req, timeout=5) as r:
-            if r.status == 200:
-                f = json.loads(r.read().decode("utf-8")).get("fields", {})
-                return Song(id=song_id, title=f.get("title",{}).get("stringValue",""), language=f.get("language",{}).get("stringValue",""), lyrics=f.get("lyrics",{}).get("stringValue","").replace("\\n","\n"), number=f.get("number",{}).get("stringValue",None), category=f.get("category",{}).get("stringValue",None), composer=f.get("composer",{}).get("stringValue",None))
-    except:
-        pass
-    return None
-
 def fetch_all_from_cloud() -> int:
-    count = 0
+    """Fetches all songs from Cloudflare Remote API and saves them locally."""
     try:
-        req = urllib.request.Request(FIRESTORE_URL)
-        with urllib.request.urlopen(req, timeout=10) as r:
-            if r.status == 200:
-                docs = json.loads(r.read().decode("utf-8")).get("documents", [])
-                for doc in docs:
-                    sid = doc.get("name","").split("/")[-1]
-                    f = doc.get("fields", {})
-                    save_to_local_cache(Song(id=sid, title=f.get("title",{}).get("stringValue",""), language=f.get("language",{}).get("stringValue",""), lyrics=f.get("lyrics",{}).get("stringValue","").replace("\\n","\n"), number=f.get("number",{}).get("stringValue",None), category=f.get("category",{}).get("stringValue",None), composer=f.get("composer",{}).get("stringValue",None)))
-                    count += 1
-    except:
-        pass
-    return count
+        # We use a clean urllib request to hit the Cloudflare Worker
+        with urllib.request.urlopen(SYNC_URL, timeout=10) as response:
+            if response.status == 200:
+                cloud_data = json.loads(response.read().decode("utf-8"))
+                if isinstance(cloud_data, list):
+                    # We preserve favorites when syncing
+                    current_data = _load_all()
+                    favorites = {s["id"] for s in current_data if s.get("is_favorite")}
+                    
+                    final_songs = []
+                    for s in cloud_data:
+                        # Extract data from the Cloudflare schema
+                        song_dict = {
+                            "id": str(s.get("id")),
+                            "title": s.get("title", ""),
+                            "language": s.get("language", "tamil"),
+                            "lyrics": s.get("lyrics", ""),
+                            "number": s.get("number", ""),
+                            "category": s.get("category", ""),
+                            "composer": s.get("composer", ""),
+                            "is_favorite": str(s.get("id")) in favorites
+                        }
+                        final_songs.append(song_dict)
+                    
+                    _save_all(final_songs)
+                    return len(final_songs)
+    except Exception as e:
+        print(f"Sync error: {e}")
+        raise e
+    return 0
+
+def fetch_from_cloud_api(song_id: str) -> Optional[Song]:
+    # Individual lookup is handled by global sync in this version
+    return None
