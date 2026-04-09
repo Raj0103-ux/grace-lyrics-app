@@ -1,1 +1,1 @@
-# Grace Lyrics - utils package
+# GGGM - utils package

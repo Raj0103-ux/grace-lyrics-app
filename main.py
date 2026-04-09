@@ -375,7 +375,7 @@ def main(page: ft.Page):
                         ft.Row([
                             ft.Image(src="icon.png", width=40, height=40, border_radius=8),
                             ft.Column([
-                                ft.Text("Grace Lyrics", size=24, weight=ft.FontWeight.BOLD, color="white"),
+                                ft.Text("GGGM", size=24, weight=ft.FontWeight.BOLD, color="white"),
                                 ft.Text("Songs of Worship", size=12, color="#C5CAE9"),
                             ], spacing=2),
                         ], spacing=10),

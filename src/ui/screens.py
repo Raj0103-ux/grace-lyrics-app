@@ -31,7 +31,7 @@ class HomeView(ft.View):
             ft.Tab(text="Tamil", icon=ft.Icons.LANGUAGE, content=create_song_list(page, "tamil")),
             ft.Tab(text="Telugu", icon=ft.Icons.LANGUAGE, content=create_song_list(page, "telugu"))], expand=1)
         self.controls = [
-            ft.AppBar(title=ft.Text("Grace Lyrics", color=page.theme.color_scheme.secondary, weight=ft.FontWeight.BOLD), bgcolor=page.theme.color_scheme.primary, center_title=True, actions=[
+            ft.AppBar(title=ft.Text("GGGM", color=page.theme.color_scheme.secondary, weight=ft.FontWeight.BOLD), bgcolor=page.theme.color_scheme.primary, center_title=True, actions=[
                 ft.IconButton(ft.Icons.SEARCH, icon_color=page.theme.color_scheme.secondary, on_click=self.toggle_search),
                 ft.IconButton(ft.Icons.SETTINGS, icon_color=page.theme.color_scheme.secondary, on_click=lambda e: page.go("/admin"))]),
             self.search_bar, self.tabs]

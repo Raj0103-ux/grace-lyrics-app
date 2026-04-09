@@ -62,7 +62,7 @@ print("14. ROW: PASS")
 ft.Container(
     content=ft.Row(
         controls=[
-            ft.Text("Grace Lyrics", size=22, weight=ft.FontWeight.BOLD, color="#C8D6F0"),
+            ft.Text("GGGM", size=22, weight=ft.FontWeight.BOLD, color="#C8D6F0"),
             ft.Row(controls=[ft.IconButton(ft.Icons.SEARCH, icon_color="#C8D6F0")], spacing=0),
         ],
         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,

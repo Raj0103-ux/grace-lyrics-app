@@ -1,1 +1,1 @@
-# Grace Lyrics - src package
+# GGGM - src package

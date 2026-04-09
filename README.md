@@ -1,4 +1,4 @@
-# Grace Lyrics App
+# GGGM App
 
 A production-ready Android App for Christian Song Lyrics built with Python (Flet/Flutter) and SQLite. 
 
@@ -41,7 +41,7 @@ flet build apk
 **Customizing the Build:**
 If you want to customize the bundle name, version, and organization, run it like this:
 ```bash
-flet build apk --project "Grace Lyrics" --org com.example.grace_lyrics --version 1.0.0
+flet build apk --project "GGGM" --org com.gggm --version 1.0.0
 ```
 
 ### Applying the Logo

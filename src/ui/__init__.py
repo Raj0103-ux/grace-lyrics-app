@@ -1,1 +1,1 @@
-# Grace Lyrics - ui package
+# GGGM - ui package
