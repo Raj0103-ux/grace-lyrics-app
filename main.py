@@ -733,7 +733,7 @@ def main(page: ft.Page):
                         ft.Container(
                             content=ft.Row([
                                 ft.IconButton(ft.Icons.ARROW_BACK, icon_color="white", on_click=lambda e: show_login()),
-                                ft.Text("Master Admin Dashboard", size=20, color="white", weight=ft.FontWeight.BOLD),
+                                ft.Text("Cloud Management", size=20, color="white", weight=ft.FontWeight.BOLD),
                             ]),
                             bgcolor="#3F51B5",
                             padding=ft.Padding(left=5, right=5, top=10, bottom=10),
@@ -741,27 +741,8 @@ def main(page: ft.Page):
                         ft.Container(
                             content=ft.Column(
                                 controls=[
-                                    ft.Text("Add New Song", size=24, weight=ft.FontWeight.BOLD, color="#1A237E"),
-                                    title_in,
-                                    ft.Row([lang_in, num_in], spacing=10),
-                                    lyrics_in,
-                                    ft.ElevatedButton(
-                                        "UPLOAD TO CLOUD", on_click=push_to_cloud,
-                                        width=float("inf"), height=50,
-                                        style=ft.ButtonStyle(bgcolor="#3F51B5", color="white", shape=ft.RoundedRectangleBorder(radius=15))
-                                    ),
-                                    status_in,
-                                    ft.Divider(height=30, color="#E8EAF6"),
-                                    ft.Text("Bulk Upload (Options A)", size=18, weight=ft.FontWeight.BOLD, color="#1A237E"),
-                                    ft.Text("Upload multiple PDF, TXT, or PPTX files. Titles will be taken from filenames.", size=12, color="#546E7A"),
-                                    ft.ElevatedButton(
-                                        "SELECT FILES", icon=ft.Icons.FILE_UPLOAD,
-                                        on_click=lambda e: page.run_task(process_bulk_upload, e),
-                                        width=float("inf"),
-                                        style=ft.ButtonStyle(bgcolor="#E1E5F2", color="#3F51B5", shape=ft.RoundedRectangleBorder(radius=15))
-                                    ),
-                                    ft.Divider(height=40, color="#E8EAF6"),
                                     ft.Text("Manage / Delete Songs", size=24, weight=ft.FontWeight.BOLD, color="#1A237E"),
+                                    ft.Text("Deletions are permanent and sync to all users.", size=12, color="#546E7A"),
                                     ft.Text(f"Total Songs: {len(SONGS)}", size=14, color="#546E7A"),
                                 ] + [
                                     ft.Container(
