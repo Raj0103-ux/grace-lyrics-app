@@ -27,7 +27,7 @@ def native_pick_files():
 # ===================== IN-MEMORY DATA STORE =====================
 SONGS = []
 
-FIRESTORE_URL = "https://gggm-admin.myntra-tracker-123.workers.dev"
+FIRESTORE_URL = "https://firestore.googleapis.com/v1/projects/grace-lyrics-admin/databases/(default)/documents/songs"
 
 def seed_default_songs():
     global SONGS
@@ -82,29 +82,33 @@ def cloud_sync():
     global SONGS
     count = 0
     try:
-        # Fetch from our new Cloudflare /songs endpoint
-        req = urllib.request.Request(f"{FIRESTORE_URL}/songs")
+        # Fetch from our original Firebase Firestore
+        req = urllib.request.Request(FIRESTORE_URL)
         with urllib.request.urlopen(req, timeout=15) as resp:
             body = resp.read().decode("utf-8")
-            cloud_list = json.loads(body)
+            data = json.loads(body)
+            docs = data.get("documents", [])
             
-            # Simple list of dicts directly from Cloudflare D1
-            if isinstance(cloud_list, list):
-                fav_ids = {s["id"] for s in SONGS if s.get("is_favorite", False)}
-                new_songs = []
-                for s in cloud_list:
-                    song = {
-                        "id": str(s.get("id")),
-                        "title": s.get("title", "Untitled"),
-                        "language": s.get("language", "tamil").lower(),
-                        "lyrics": s.get("lyrics", ""),
-                        "is_favorite": str(s.get("id")) in fav_ids,
-                    }
-                    new_songs.append(song)
+            # Using a temp set to track favorites across sync
+            fav_ids = {s["id"] for s in SONGS if s.get("is_favorite", False)}
+            
+            new_songs = []
+            for doc in docs:
+                sid = doc.get("name", "").split("/")[-1]
+                fields = doc.get("fields", {})
                 
-                if new_songs:
-                    SONGS = new_songs
-                    count = len(SONGS)
+                song = {
+                    "id": sid,
+                    "title": fields.get("title", {}).get("stringValue", "Untitled"),
+                    "language": fields.get("language", {}).get("stringValue", "tamil").lower(),
+                    "lyrics": fields.get("lyrics", {}).get("stringValue", "").replace("\\n", "\n"),
+                    "is_favorite": sid in fav_ids,
+                }
+                new_songs.append(song)
+                count += 1
+            
+            if new_songs:
+                SONGS = new_songs
     except Exception as e:
         print(f"Sync error: {e}")
     return count
@@ -738,13 +742,23 @@ def main(page: ft.Page):
                         ft.Container(
                             content=ft.Column(
                                 controls=[
-                                    ft.ElevatedButton(
-                                        "GO TO WEB ADMIN", 
-                                        icon=ft.Icons.WEB,
-                                        on_click=lambda _: page.launch_url("https://raj0103-ux.github.io/grace-lyrics-app/", web_window_name="_blank"),
-                                        width=float("inf"),
-                                        style=ft.ButtonStyle(bgcolor="#3F51B5", color="white", shape=ft.RoundedRectangleBorder(radius=10))
-                                    ),
+                                    ft.Text("ACCESS WEB ADMIN AT:", size=12, color="#78909C", weight=ft.FontWeight.BOLD),
+                                    ft.Row([
+                                        ft.Icon(ft.Icons.LANGUAGE, size=18, color="#3F51B5"),
+                                        ft.Text(
+                                            "https://raj0103-ux.github.io/grace-lyrics-app/",
+                                            size=16,
+                                            color="#3F51B5",
+                                            weight=ft.FontWeight.BOLD,
+                                            spans=[
+                                                ft.TextSpan(
+                                                    "(Open in Browser)",
+                                                    style=ft.TextStyle(decoration=ft.TextDecoration.UNDERLINE, size=12),
+                                                    on_click=lambda _: page.launch_url("https://raj0103-ux.github.io/grace-lyrics-app/", web_window_name="_blank")
+                                                )
+                                            ]
+                                        ),
+                                    ], alignment=ft.MainAxisAlignment.CENTER),
                                     ft.Divider(height=20, color="#E8EAF6"),
                                     ft.Text("Manage / Delete Songs", size=24, weight=ft.FontWeight.BOLD, color="#1A237E"),
                                     ft.Text("Deletions are permanent and sync to all users.", size=12, color="#546E7A"),
@@ -789,9 +803,8 @@ def main(page: ft.Page):
     def delete_song(sid):
         def do_delete():
             try:
-                # Use our new Cloudflare /delete endpoint
-                data = json.dumps({"id": sid}).encode("utf-8")
-                req = urllib.request.Request(f"{FIRESTORE_URL}/delete", data=data, method="POST")
+                # Use our original Firebase REST DELETE
+                req = urllib.request.Request(f"{FIRESTORE_URL}/{sid}", method="DELETE")
                 with urllib.request.urlopen(req) as r:
                     if r.status == 200:
                         cloud_sync() # Refresh locally

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>GGGM Admin Dashboard</title>
+  <title>GGGM Admin Dashboard (Firebase)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
@@ -15,7 +15,7 @@
   </style>
 </head>
 <body>
-  <nav class="navbar"><div class="container"><strong>GGGM Master Cloud Panel</strong></div></nav>
+  <nav class="navbar"><div class="container"><strong>GGGM Master Cloud Panel (Firebase Live)</strong></div></nav>
   
   <div class="container pb-5">
     <div id="login-sec">
@@ -38,15 +38,15 @@
               <option value="telugu">Telugu</option>
             </select>
             <textarea id="lyrics" class="form-control mb-2" rows="10" placeholder="Paste Lyrics Here..."></textarea>
-            <button class="btn btn-primary w-100" onclick="uploadSingle()">UPLOAD TO CLOUD</button>
+            <button class="btn btn-primary w-100" onclick="uploadSingle()">UPLOAD TO FIREBASE</button>
             <div id="status" class="status-msg text-center"></div>
           </div>
 
           <!-- Bulk Upload -->
           <div class="card p-4 mb-4" style="background: #E8EAF6;">
-            <h4>Bulk Upload Magic</h4>
-            <p class="small text-muted">Select multiple .txt files. Titles will be taken from filenames.</p>
-            <input type="file" id="bulk-files" class="form-control mb-2" multiple accept=".txt,.pdf">
+            <h4>Firebase Bulk Upload</h4>
+            <p class="small text-muted">Select multiple .txt files. Logic will auto-save to Firestore.</p>
+            <input type="file" id="bulk-files" class="form-control mb-2" multiple accept=".txt">
             <button class="btn btn-success w-100" onclick="uploadBulk()">RUN BULK UPLOAD</button>
             <div id="bulk-status" class="status-msg text-center text-success"></div>
           </div>
@@ -55,11 +55,11 @@
         <div class="col-md-7">
            <div class="card p-4">
              <div class="d-flex justify-content-between align-items-center mb-3">
-                <h4>Manage Cloud Songs</h4>
+                <h4>Firebase Songs Library</h4>
                 <button class="btn btn-sm btn-outline-secondary" onclick="loadSongs()">Refresh List</button>
              </div>
              <div id="song-list-container">
-                <div id="song-list">Loading songs from cloud...</div>
+                <div id="song-list">Loading from Firebase...</div>
              </div>
            </div>
         </div>
@@ -68,7 +68,10 @@
   </div>
 
   <script>
-    const API_BASE = "https://gggm-admin.myntra-tracker-123.workers.dev";
+    // FIREBASE CONFIG
+    const PROJECT_ID = "grace-lyrics-admin";
+    const API_BASE = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/songs`;
+    
     let authPass = "";
 
     function checkLogin() {
@@ -89,25 +92,34 @@
 
       if (!title || !lyrics) { alert("Title and Lyrics are required!"); return; }
 
-      status.innerText = "Processing...";
+      status.innerText = "Connecting to Firebase...";
       status.className = "status-msg text-primary";
 
       try {
-        const res = await fetch(`${API_BASE}/upload`, { 
+        const sid = Date.now().toString();
+        const body = {
+          fields: {
+            title: { stringValue: title },
+            language: { stringValue: lang },
+            lyrics: { stringValue: lyrics }
+          }
+        };
+
+        const res = await fetch(`${API_BASE}?documentId=${sid}`, { 
           method: 'POST', 
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title, language: lang, lyrics, number: "" }) 
+          body: JSON.stringify(body) 
         });
         
         if (res.ok) { 
-           status.innerText = "Success! Song is live.";
+           status.innerText = "Success! Saved to Firebase.";
            status.className = "status-msg text-success";
            document.getElementById('title').value = "";
            document.getElementById('lyrics').value = "";
            loadSongs();
-        } else { throw new Error("Server error"); }
+        } else { throw new Error("Firebase error"); }
       } catch (e) {
-         status.innerText = "Upload failed. Check connection.";
+         status.innerText = "Upload failed. Check Firebase Rules.";
          status.className = "status-msg text-danger";
       }
     }
@@ -119,29 +131,37 @@
 
       if (files.length === 0) { alert("Select files first!"); return; }
 
-      status.innerText = `Starting upload of ${files.length} files...`;
+      status.innerText = `Preparing ${files.length} songs...`;
       
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        const title = file.name.replace(/\.[^/.]+$/, ""); // Remove extension
+        const title = file.name.replace(/\.[^/.]+$/, "");
         
         const reader = new FileReader();
         reader.onload = async (e) => {
           const lyrics = e.target.result;
           const lang = title.toLowerCase().includes("telugu") ? "telugu" : "tamil";
+          const sid = `${Date.now()}_${i}`;
 
           try {
-            await fetch(`${API_BASE}/upload`, { 
+            const body = {
+              fields: {
+                title: { stringValue: title },
+                language: { stringValue: lang },
+                lyrics: { stringValue: lyrics }
+              }
+            };
+            await fetch(`${API_BASE}?documentId=${sid}`, { 
               method: 'POST', 
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ title, language: lang, lyrics, number: "" }) 
+              body: JSON.stringify(body) 
             });
             status.innerText = `Uploaded [${i+1}/${files.length}]: ${title}`;
             if (i === files.length - 1) {
-              status.innerText = "Bulk upload complete!";
+              status.innerText = "Bulk upload to Firebase complete!";
               loadSongs();
             }
-          } catch(err) { console.error("Bulk error", err); }
+          } catch(err) { console.error("Firebase Bulk Error", err); }
         };
         reader.readAsText(file);
       }
@@ -150,32 +170,35 @@
     async function loadSongs() {
       const list = document.getElementById('song-list');
       try {
-        const res = await fetch(`${API_BASE}/songs`);
-        const songs = await res.json();
-        if (songs.length === 0) { list.innerHTML = "No songs found in cloud."; return; }
+        const res = await fetch(API_BASE);
+        const data = await res.json();
+        const docs = data.documents || [];
         
-        list.innerHTML = songs.map(s => `
-          <div class="d-flex justify-content-between border-bottom py-2 align-items-center">
-            <div style="max-width: 80%;">
-              <div class="fw-bold">${s.title}</div>
-              <small class="text-muted">${s.language.toUpperCase()}</small>
+        if (docs.length === 0) { list.innerHTML = "Firebase collection is empty."; return; }
+        
+        list.innerHTML = docs.map(doc => {
+          const sid = doc.name.split("/").pop();
+          const title = doc.fields.title ? doc.fields.title.stringValue : "Untitled";
+          const lang = doc.fields.language ? doc.fields.language.stringValue : "tamil";
+          return `
+            <div class="d-flex justify-content-between border-bottom py-2 align-items-center">
+              <div>
+                <div class="fw-bold">${title}</div>
+                <small class="text-muted">${lang.toUpperCase()}</small>
+              </div>
+              <button class="btn btn-sm btn-outline-danger" onclick="delSong('${sid}', '${title}')">Delete</button>
             </div>
-            <button class="btn btn-sm btn-outline-danger" onclick="delSong('${s.id}', '${s.title}')">Delete</button>
-          </div>
-        `).join('');
+          `;
+        }).join('');
       } catch (e) {
-        list.innerHTML = "Error loading songs. Please refresh.";
+        list.innerHTML = "Error loading from Firebase. Check Rules.";
       }
     }
 
     async function delSong(id, title) {
       if(!confirm(`Permanently delete "${title}"?`)) return;
       try {
-        await fetch(`${API_BASE}/delete`, { 
-          method: 'POST', 
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({id}) 
-        });
+        await fetch(`${API_BASE}/${id}`, { method: 'DELETE' });
         loadSongs();
       } catch(e) { alert("Delete failed."); }
     }
