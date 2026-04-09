@@ -27,7 +27,7 @@ def native_pick_files():
 # ===================== IN-MEMORY DATA STORE =====================
 SONGS = []
 
-FIRESTORE_URL = "https://gggm-admin.rajhanoch24.workers.dev"
+FIRESTORE_URL = "https://gggm-admin.myntra-tracker-123.workers.dev"
 
 def seed_default_songs():
     global SONGS
@@ -741,7 +741,7 @@ def main(page: ft.Page):
                                     ft.ElevatedButton(
                                         "GO TO WEB ADMIN", 
                                         icon=ft.Icons.WEB,
-                                        on_click=lambda _: page.launch_url("https://raj010.github.io/grace-lyrics-app/"),
+                                        on_click=lambda _: page.launch_url("https://raj0103-ux.github.io/grace-lyrics-app/"),
                                         width=float("inf"),
                                         style=ft.ButtonStyle(bgcolor="#3F51B5", color="white", shape=ft.RoundedRectangleBorder(radius=10))
                                     ),
