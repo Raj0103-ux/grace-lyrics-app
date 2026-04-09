@@ -38,8 +38,8 @@ jobs:
         run: |
           # Ensure assets folder exists for icons
           mkdir -p assets
-          # Run the clean build with proper branding
-          flet build apk --product "GGGM" --org com.gggm --icon assets/icon.png --splash assets/splash.png
+          # Run the clean build with proper branding (picks up assets automatically)
+          flet build apk --product "GGGM" --org com.gggm
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
