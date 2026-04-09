@@ -738,6 +738,14 @@ def main(page: ft.Page):
                         ft.Container(
                             content=ft.Column(
                                 controls=[
+                                    ft.ElevatedButton(
+                                        "GO TO WEB ADMIN", 
+                                        icon=ft.Icons.WEB,
+                                        on_click=lambda _: page.launch_url("https://raj010.github.io/grace-lyrics-app/"),
+                                        width=float("inf"),
+                                        style=ft.ButtonStyle(bgcolor="#3F51B5", color="white", shape=ft.RoundedRectangleBorder(radius=10))
+                                    ),
+                                    ft.Divider(height=20, color="#E8EAF6"),
                                     ft.Text("Manage / Delete Songs", size=24, weight=ft.FontWeight.BOLD, color="#1A237E"),
                                     ft.Text("Deletions are permanent and sync to all users.", size=12, color="#546E7A"),
                                     ft.Text(f"Total Songs: {len(SONGS)}", size=14, color="#546E7A"),
