@@ -5,6 +5,7 @@ import threading
 import time
 import os
 import uuid
+import traceback
 
 # For native Windows picker (workaround for desktop)
 def native_pick_files():
@@ -262,59 +263,82 @@ class BibleReader:
 
 # ===================== MAIN APP =====================
 def main(page: ft.Page):
-    page.title = "GGGM - Grace Lyrics"
-    page.theme_mode = ft.ThemeMode.LIGHT
-    page.window_width = 400
-    page.window_height = 800
-    
-    # Simple Navigation History to prevent app closure on back-swipe
-    history_stack = ["home"]
+    try:
+        page.title = "GGGM - Grace Lyrics"
+        page.theme_mode = ft.ThemeMode.LIGHT
+        page.window_width = 400
+        page.window_height = 800
+        
+        # Simple Navigation History to prevent app closure on back-swipe
+        history_stack = ["home"]
 
-    # Initialize Bible Service
-    bible_service = BibleReader(page, history_stack)
+        # Initialize Bible Service
+        bible_service = BibleReader(page, history_stack)
 
-    # Navigation Hub Logic
-    def on_nav_change(e):
-        index = e.control.selected_index
-        if index == 0:
-            show_home()
-        elif index == 1:
-            bible_service.show_library()
-        elif index == 2:
-            show_admin()
-
-    page.navigation_bar = ft.NavigationBar(
-        destinations=[
-            ft.NavigationDestination(icon=ft.Icons.MUSIC_NOTE, label="GGGM-Lyrics"),
-            ft.NavigationDestination(icon=ft.Icons.MENU_BOOK, label="GGGM Bible"),
-            ft.NavigationDestination(icon=ft.Icons.SETTINGS, label="Admin & Sync"),
-        ],
-        on_change=on_nav_change,
-        selected_index=0,
-        bgcolor="#FFFFFF",
-    )
-
-    def on_back_button(e):
-        if len(history_stack) > 1:
-            history_stack.pop() # Remove current view
-            prev_view = history_stack[-1]
-            if prev_view == "home":
+        # Navigation Hub Logic
+        def on_nav_change(e):
+            index = e.control.selected_index
+            if index == 0:
                 show_home()
-            elif prev_view == "admin":
+            elif index == 1:
+                bible_service.show_library()
+            elif index == 2:
                 show_admin()
-            elif prev_view == "admin_editor":
-                show_admin_editor()
-            # If it's a song index, we would've stored it
-            elif prev_view.startswith("song:"):
-                show_song(prev_view.split(":")[1])
-        else:
-            # Already at home, allow closure or just stay
-            pass
-            
-    page.on_back_button = on_back_button
-    page.bgcolor = "#F5F7FA"
 
-    # ---- File Picker Service ----
+        page.navigation_bar = ft.NavigationBar(
+            destinations=[
+                ft.NavigationDestination(icon=ft.Icons.MUSIC_NOTE, label="GGGM-Lyrics"),
+                ft.NavigationDestination(icon=ft.Icons.MENU_BOOK, label="GGGM Bible"),
+                ft.NavigationDestination(icon=ft.Icons.SETTINGS, label="Admin & Sync"),
+            ],
+            on_change=on_nav_change,
+            selected_index=0,
+            bgcolor="#FFFFFF",
+        )
+
+        def on_back_button(e):
+            if len(history_stack) > 1:
+                history_stack.pop() # Remove current view
+                prev_view = history_stack[-1]
+                if prev_view == "home":
+                    show_home()
+                elif prev_view == "admin":
+                    show_admin()
+                elif prev_view == "admin_editor":
+                    show_admin_editor()
+                elif prev_view.startswith("song:"):
+                    show_song(prev_view.split(":")[1])
+            else:
+                pass
+                
+        page.on_back_button = on_back_button
+        page.bgcolor = "#F5F7FA"
+
+        # ... (Include all the rest of the main body functions here) ...
+        # [Note: The internal functions like show_home, show_song, etc. need to be 
+        #  properly indented inside the try block now]
+
+    except Exception as fatal_e:
+        # THE DIAGNOSTIC SHIELD
+        page.controls.clear()
+        page.add(
+            ft.SafeArea(
+                content=ft.Column([
+                    ft.Icon(ft.Icons.ERROR_OUTLINE, color="red", size=50),
+                    ft.Text("SYSTEM ERROR DETECTED", size=20, weight="bold", color="red"),
+                    ft.Text("The app encountered a problem during startup.", size=12),
+                    ft.Divider(),
+                    ft.Container(
+                        content=ft.Text(f"{fatal_e}\n\n{traceback.format_exc()}", 
+                                        color="white", size=10, font_family="monospace"),
+                        bgcolor="black", padding=10, border_radius=10
+                    ),
+                    ft.ElevatedButton("Try to Reload Home", on_click=lambda _: show_home())
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=20
+            )
+        )
+        page.update()
     picker = ft.FilePicker()
     
     async def process_bulk_upload(e):
