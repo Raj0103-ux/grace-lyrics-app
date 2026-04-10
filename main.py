@@ -7,1048 +7,199 @@ import os
 import uuid
 import traceback
 
-# For native Windows picker (workaround for desktop)
-def native_pick_files():
-    try:
-        import tkinter as tk
-        from tkinter import filedialog
-        root = tk.Tk()
-        root.withdraw()
-        # Ensure it stays on top
-        root.attributes("-topmost", True)
-        files = filedialog.askopenfilenames(
-            title="Select Files for Bulk Upload",
-            filetypes=[("Lyrics Documents", "*.txt;*.pdf;*.pptx"), ("All Files", "*.*")]
-        )
-        root.destroy()
-        return files
-    except:
-        return []
+# ===================== CONFIGURATION =====================
+FIRESTORE_URL = "https://firestore.googleapis.com/v1/projects/grace-lyrics-545a1/databases/(default)/documents/songs"
 
-# ===================== IN-MEMORY DATA STORE =====================
+# ===================== GLOBAL STATE =====================
 SONGS = []
+history_stack = ["home"]
+current_lang_tab = [0] # 0=Tamil, 1=Telugu
+search_query = [""]
+search_open = [False]
 
-FIRESTORE_URL = "https://firestore.googleapis.com/v1/projects/grace-lyrics-admin/databases/(default)/documents/songs"
-
+# ===================== DATA SERVICES =====================
 def seed_default_songs():
     global SONGS
-    if len(SONGS) > 0:
-        return
     SONGS = [
-        {
-            "id": "ta_172",
-            "title": "172. கர்த்தாவே தேவர்களில்",
-            "language": "tamil",
-            "is_favorite": False,
-            "lyrics": (
-                "கர்த்தாவே தேவர்களில் உமக்கொப்பனவர் யார்?\n"
-                "வானத்திலும் பூமியிலும் உமக்கொப்பானவர் யார்?\n\n"
-                "உமக்கொப்பனவர் யார்? உமக்கொப்பனவர் யார்?\n"
-                "வானத்திலும் பூமியிலும் உமக்கொப்பானவர் யார்?\n\n"
-                "1. செங்கடலை நீர் பிளந்து\n"
-                "உந்தன் ஜனங்களை நடத்திச் சென்றீர்\n"
-                "நீர் நல்லவர் சர்வ வல்லவர்\n"
-                "என்றும் வாக்கு மாறாதவர் (2)\n\n"
-                "2. தூதர்கள் உண்ணும் உணவால்\n"
-                "உந்தன் ஜனங்களை போஷித்தீரே\n"
-                "உம்மைப்போல யாருண்டு\n"
-                "இந்த ஜனங்களை நேசித்திட (2)"
-            ),
-        },
-        {
-            "id": "te_1",
-            "title": "అగ్ని మండించు - Agni Mandinchu",
-            "language": "telugu",
-            "is_favorite": False,
-            "lyrics": (
-                "అగ్ని మండించు – నాలో అగ్ని మండించు (2)\n"
-                "పరిశుద్ధాత్ముడా – నాలో అగ్ని మండించు (2)\n\n"
-                "Agni Mandinchu – Naalo Agni Mandinchu (2)\n"
-                "Parishuddhaathmudaa – Naalo Agni Mandinchu (2)"
-            ),
-        },
+        {"id": "s1", "title": "அசாத்தியங்கள் சாத்தியமே", "language": "tamil", "lyrics": "அசாத்தியங்கள் சாத்தியமே...\\nஉம்மால் எல்லாம் கூடும்."},
+        {"id": "s2", "title": "பெத்தலையில் பிறந்தவரை", "language": "tamil", "lyrics": "பெத்தலையில் பிறந்தவரை...\\nபோற்றி பாடுவோம்."}
     ]
 
 def get_filtered(lang, query=""):
-    result = []
-    for s in SONGS:
-        if s["language"] != lang:
-            continue
-        if query and query.lower() not in s["title"].lower():
-            continue
-        result.append(s)
-    return sorted(result, key=lambda x: x["title"])
+    return [s for s in SONGS if s["language"] == lang and query.lower() in s["title"].lower()]
 
 def cloud_sync():
     global SONGS
-    count = 0
     try:
-        # Fetch from our original Firebase Firestore
-        req = urllib.request.Request(FIRESTORE_URL)
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            body = resp.read().decode("utf-8")
-            data = json.loads(body)
-            docs = data.get("documents", [])
-            
-            # Using a temp set to track favorites across sync
-            fav_ids = {s["id"] for s in SONGS if s.get("is_favorite", False)}
-            
-            new_songs = []
-            for doc in docs:
-                sid = doc.get("name", "").split("/")[-1]
-                fields = doc.get("fields", {})
-                
-                song = {
-                    "id": sid,
-                    "title": fields.get("title", {}).get("stringValue", "Untitled"),
-                    "language": fields.get("language", {}).get("stringValue", "tamil").lower(),
-                    "lyrics": fields.get("lyrics", {}).get("stringValue", "").replace("\\n", "\n"),
-                    "is_favorite": sid in fav_ids,
-                }
-                new_songs.append(song)
-                count += 1
-            
-            if new_songs:
-                SONGS = new_songs
+        with urllib.request.urlopen(FIRESTORE_URL) as response:
+            if response.status == 200:
+                data = json.loads(response.read().decode())
+                new_songs = []
+                for doc in data.get("documents", []):
+                    fields = doc.get("fields", {})
+                    song_id = doc["name"].split("/")[-1]
+                    new_songs.append({
+                        "id": song_id,
+                        "title": fields.get("title", {}).get("stringValue", "Untitled"),
+                        "language": fields.get("language", {}).get("stringValue", "tamil").lower(),
+                        "lyrics": fields.get("lyrics", {}).get("stringValue", "").replace("\\n", "\n"),
+                        "number": fields.get("number", {}).get("stringValue", ""),
+                    })
+                if new_songs:
+                    SONGS = new_songs
+                    return len(new_songs)
     except Exception as e:
         print(f"Sync error: {e}")
-    return count
+    return 0
 
-# ===================== BIBLE ENGINE (Inlined for Stability) =====================
-class BibleReader:
-    def __init__(self, page: ft.Page, history_stack):
-        self.page = page
-        self.history_stack = history_stack
+# ===================== BIBLE ENGINE =====================
+class BibleManager:
+    def __init__(self):
         self.selected_lang = "tamil"
-        self.selected_book = None
-        self.selected_chapter = 1
-        
-        # Load Metadata
+        self.metadata = {"tamil": [{"name": "Adiyagamam", "chapters": 50}], "telugu": [{"name": "Adikandamu", "chapters": 50}]}
         try:
-            # Try to find metadata in assets
             meta_path = os.path.join(os.getcwd(), "assets", "bible", "metadata.json")
-            if not os.path.exists(meta_path):
-                # Fallback for some APK structures
-                meta_path = "assets/bible/metadata.json"
-                
-            with open(meta_path, "r", encoding="utf-8") as f:
-                self.metadata = json.load(f)
-        except Exception as e:
-            print(f"Bible Meta Error: {e}")
-            self.metadata = {"tamil": [], "telugu": []}
+            if os.path.exists(meta_path):
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    self.metadata = json.load(f)
+        except: pass
 
-    def show_library(self):
-        self.page.controls.clear()
-        
-        # Header
-        header = ft.Container(
-            content=ft.Row([
-                ft.Text("GGGM Bible", size=24, color="white", weight=ft.FontWeight.BOLD),
-                ft.SegmentedButton(
-                    segments=[
-                        ft.Segment(value="tamil", label=ft.Text("Tamil")),
-                        ft.Segment(value="telugu", label=ft.Text("Telugu")),
-                    ],
-                    selected={self.selected_lang},
-                    on_change=self.on_lang_change,
-                )
-            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-            bgcolor="#3F51B5", padding=20, width=float("inf")
-        )
-
-        books_list = self.metadata.get(self.selected_lang, [])
-        
-        grid = ft.GridView(
-            expand=True,
-            runs_count=3,
-            max_extent=150,
-            child_aspect_ratio=1.0,
-            spacing=10,
-            padding=20,
-        )
-
-        for book in books_list:
-            grid.controls.append(
-                ft.Container(
-                    content=ft.Column([
-                        ft.Icon(ft.Icons.MENU_BOOK, color="#3F51B5"),
-                        ft.Text(book["name"], size=14, weight=ft.FontWeight.W_500, text_align=ft.TextAlign.CENTER)
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, alignment=ft.MainAxisAlignment.CENTER),
-                    bgcolor="white",
-                    border_radius=15,
-                    on_click=lambda e, b=book: self.open_chapters(b),
-                    shadow=ft.BoxShadow(blur_radius=5, color=ft.Colors.BLACK12)
-                )
-            )
-
-        self.page.add(
-            ft.SafeArea(content=ft.Column([header, grid], spacing=0, expand=True), expand=True)
-        )
-        self.page.update()
-
-    def on_lang_change(self, e):
-        self.selected_lang = list(e.selection)[0]
-        self.show_library()
-
-    def open_chapters(self, book):
-        self.selected_book = book
-        self.show_reading_view(1)
-
-    def show_reading_view(self, chapter):
-        self.page.controls.clear()
-        self.selected_chapter = chapter
-        
-        # Sacred UI Reader Header
-        header = ft.Container(
-            content=ft.Row([
-                ft.IconButton(ft.Icons.ARROW_BACK, icon_color="white", on_click=lambda _: self.show_library()),
-                ft.Text(f"{self.selected_book['name']} {chapter}", size=20, color="white", weight=ft.FontWeight.BOLD),
-                ft.IconButton(ft.Icons.SHARE, icon_color="white"),
-            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-            bgcolor="#3F51B5", padding=ft.Padding(10, 5, 10, 5), width=float("inf")
-        )
-
-        # Verse Reader Content (Sacred UI Theme)
-        verses_col = ft.Column(scroll=ft.ScrollMode.AUTO, spacing=15, expand=True)
-        
-        verses_col.controls.append(
-            ft.Container(
-                content=ft.Column([
-                    ft.Text(f"Verse {v}: Sample sacred text...", size=16, color="#5D4037")
-                    for v in range(1, 15)
-                ]),
-                padding=20
-            )
-        )
-
-        # THE QUICK-JUMP STRIP
-        jump_strip = ft.Row(
-            scroll=ft.ScrollMode.AUTO,
-            spacing=10,
-            controls=[
-                ft.Container(
-                    content=ft.Text(str(i), weight=ft.FontWeight.BOLD, color="white" if i == chapter else "#3F51B5"),
-                    bgcolor="#3F51B5" if i == chapter else "white",
-                    width=40, height=40, border_radius=10,
-                    alignment=ft.alignment.center,
-                    on_click=lambda e, ch=i: self.show_reading_view(ch),
-                    border=ft.border.all(1, "#3F51B5")
-                ) for i in range(1, 21) 
-            ]
-        )
-
-        jump_container = ft.Container(
-            content=jump_strip,
-            padding=10,
-            bgcolor="white",
-            border=ft.border.only(top=ft.border.BorderSide(1, "#E8EAF6"))
-        )
-
-        self.page.add(
-            ft.SafeArea(
-                content=ft.Column([
-                    header,
-                    ft.Container(
-                        content=verses_col,
-                        bgcolor="#FFF9E1", 
-                        expand=True,
-                        padding=ft.Padding(15, 0, 15, 0)
-                    ),
-                    jump_container
-                ], spacing=0),
-                expand=True
-            )
-        )
-        self.page.update()
+bible_eng = BibleManager()
 
 # ===================== MAIN APP =====================
 def main(page: ft.Page):
     try:
         page.title = "GGGM - Grace Lyrics"
         page.theme_mode = ft.ThemeMode.LIGHT
-        page.window_width = 400
-        page.window_height = 800
-        
-        # Simple Navigation History to prevent app closure on back-swipe
-        history_stack = ["home"]
+        page.padding = 0
+        page.bgcolor = "#F5F7FA"
 
-        # Initialize Bible Service
-        bible_service = BibleReader(page, history_stack)
-
-        # Navigation Hub Logic
+        # --- NAVIGATION HANDLER ---
         def on_nav_change(e):
-            index = e.control.selected_index
-            if index == 0:
-                show_home()
-            elif index == 1:
-                bible_service.show_library()
-            elif index == 2:
-                show_admin()
+            idx = e.control.selected_index
+            if idx == 0: show_home()
+            elif idx == 1: show_bible_library()
+            elif idx == 2: show_settings()
 
-        page.navigation_bar = ft.NavigationBar(
+        nav_bar = ft.NavigationBar(
             destinations=[
-                ft.NavigationDestination(icon=ft.Icons.MUSIC_NOTE, label="GGGM-Lyrics"),
-                ft.NavigationDestination(icon=ft.Icons.MENU_BOOK, label="GGGM Bible"),
-                ft.NavigationDestination(icon=ft.Icons.SETTINGS, label="Admin & Sync"),
+                ft.NavigationBarDestination(icon=ft.Icons.MUSIC_NOTE, label="Lyrics"),
+                ft.NavigationBarDestination(icon=ft.Icons.MENU_BOOK, label="Bible"),
+                ft.NavigationBarDestination(icon=ft.Icons.SETTINGS, label="Settings"),
             ],
             on_change=on_nav_change,
             selected_index=0,
-            bgcolor="#FFFFFF",
+            bgcolor="white",
         )
 
-        def on_back_button(e):
-            if len(history_stack) > 1:
-                history_stack.pop() # Remove current view
-                prev_view = history_stack[-1]
-                if prev_view == "home":
-                    show_home()
-                elif prev_view == "admin":
-                    show_admin()
-                elif prev_view == "admin_editor":
-                    show_admin_editor()
-                elif prev_view.startswith("song:"):
-                    show_song(prev_view.split(":")[1])
-            else:
-                pass
-                
-        page.on_back_button = on_back_button
-        page.bgcolor = "#F5F7FA"
-
-        # ... (Include all the rest of the main body functions here) ...
-        # [Note: The internal functions like show_home, show_song, etc. need to be 
-        #  properly indented inside the try block now]
-
-    except Exception as fatal_e:
-        # THE DIAGNOSTIC SHIELD
-        page.controls.clear()
-        page.add(
-            ft.SafeArea(
-                content=ft.Column([
-                    ft.Icon(ft.Icons.ERROR_OUTLINE, color="red", size=50),
-                    ft.Text("SYSTEM ERROR DETECTED", size=20, weight="bold", color="red"),
-                    ft.Text("The app encountered a problem during startup.", size=12),
-                    ft.Divider(),
-                    ft.Container(
-                        content=ft.Text(f"{fatal_e}\n\n{traceback.format_exc()}", 
-                                        color="white", size=10, font_family="monospace"),
-                        bgcolor="black", padding=10, border_radius=10
-                    ),
-                    ft.ElevatedButton("Try to Reload Home", on_click=lambda _: show_home())
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                padding=20
-            )
-        )
-        page.update()
-    picker = ft.FilePicker()
-    
-    async def process_bulk_upload(e):
-        selected_paths = []
-        
-        # Check platform
-        is_android = page.platform == ft.PagePlatform.ANDROID or page.platform == ft.PagePlatform.IOS
-        
-        if is_android:
-            # Use standard Flet Picker on Mobile
-            if picker not in page.overlay:
-                page.overlay.append(picker)
-                page.update()
+        # --- VIEW: HOME ---
+        def show_home():
+            nav_bar.selected_index = 0
+            lang = "tamil" if current_lang_tab[0] == 0 else "telugu"
+            songs = get_filtered(lang, search_query[0])
             
-            res = await picker.pick_files(
-                allow_multiple=True, 
-                allowed_extensions=["txt", "pdf", "pptx"],
-                file_type=ft.FilePickerFileType.CUSTOM
-            )
-            if res:
-                selected_paths = [f.path for f in res if f.path]
-        else:
-            # Use native Windows picker on Desktop to avoid "Unknown Control" error
-            status_in = getattr(page, "admin_status", None)
-            if status_in:
-                status_in.value = "Opening Windows File Selector..."
-                page.update()
-            
-            # This is a blocking call, so we run it in a way that doesn't freeze Flet UI
-            selected_paths = native_pick_files()
-
-        if not selected_paths:
-            status_in = getattr(page, "admin_status", None)
-            if status_in:
-                status_in.value = ""
-                page.update()
-            return
-        
-        status_in = getattr(page, "admin_status", None)
-        if status_in:
-            status_in.value = f"Processing {len(selected_paths)} files..."
-            status_in.color = "blue"
-            page.update()
-
-        def background_processing():
-            success_count = 0
-            for path in selected_paths:
-                try:
-                    name = os.path.basename(path)
-                    title = os.path.splitext(name)[0]
-                    content = ""
-                    
-                    if name.lower().endswith(".txt"):
-                        with open(path, 'r', encoding='utf-8', errors='ignore') as file:
-                            content = file.read()
-                    elif name.lower().endswith(".pdf"):
-                        try:
-                            from pypdf import PdfReader
-                            reader = PdfReader(path)
-                            for page_pdf in reader.pages:
-                                content += page_pdf.extract_text() + "\n"
-                        except ImportError:
-                            content = "[PDF Library Error: Please rebuild APK with requirements]"
-                    elif name.lower().endswith(".pptx"):
-                        try:
-                            from pptx import Presentation
-                            prs = Presentation(path)
-                            for slide in prs.slides:
-                                for shape in slide.shapes:
-                                    if hasattr(shape, "text"):
-                                        content += shape.text + "\n"
-                        except ImportError:
-                            content = "[PPTX Library Error: Please rebuild APK with requirements]"
-                    
-                    if content.strip():
-                        # Push to cloud
-                        sid = f"bk_{uuid.uuid4().hex[:8]}"
-                        document = {
-                            "fields": {
-                                "title": {"stringValue": title},
-                                "language": {"stringValue": getattr(page, "admin_lang", "tamil")},
-                                "number": {"stringValue": ""},
-                                "lyrics": {"stringValue": content.replace("\n", "\\n")},
-                                "category": {"stringValue": "General"},
-                                "composer": {"stringValue": "Unknown"}
-                            }
-                        }
-                        req = urllib.request.Request(
-                            f"{FIRESTORE_URL}/{sid}",
-                            data=json.dumps(document).encode("utf-8"),
-                            headers={"Content-Type": "application/json"},
-                            method="PATCH"
-                        )
-                        with urllib.request.urlopen(req) as r:
-                            if r.status == 200:
-                                success_count += 1
-                except Exception as ex:
-                    print(f"Error processing {path}: {ex}")
-            
-            if status_in:
-                status_in.value = f"Bulk Upload Complete! {success_count} songs added."
-                status_in.color = "green"
-                page.update()
-                # Refresh local cache in background
-                cloud_sync()
-                # Instead of closing, refresh the management list if visible
-                time.sleep(2)
-                show_admin_editor()
-
-        threading.Thread(target=background_processing, daemon=True).start()
-
-
-    # Use a hidden container for picker if needed, but overlay is better
-    # We will append it to overlay only when the Admin dashboard is opened to avoid the red screen on home
-
-
-    try:
-        seed_default_songs()
-    except Exception as e:
-        page.add(ft.SafeArea(ft.Text(f"Initialization Error: {e}", color="red")))
-        return
-
-    # ---- State ----
-    current_tab = [0]  # 0=Tamil, 1=Telugu
-    search_query = [""]
-    search_open = [False]
-    is_syncing = [False]
-
-    def refresh_ui():
-        try:
-            show_home()
-        except:
-            pass
-
-    def start_auto_sync():
-        if is_syncing[0]:
-            return
-        is_syncing[0] = True
-        try:
-            c = cloud_sync()
-            if c > 0:
-                show_home()
-        finally:
-            is_syncing[0] = False
-
-    # ---- Build song list ----
-    def make_song_list(lang, query=""):
-        songs = get_filtered(lang, query)
-        if not songs:
-            return ft.Container(
-                content=ft.Column(
-                    controls=[
-                        ft.Icon(ft.Icons.CLOUD_OFF, size=50, color="#B0BEC5"),
-                        ft.Text(
-                            "No songs found.\nChecking for updates...",
-                            text_align=ft.TextAlign.CENTER,
-                            color="#78909C",
-                            size=16,
-                        ),
-                    ],
-                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                ),
-                alignment=ft.alignment.Alignment(0, 0),
-                padding=40,
-            )
-        
-        col = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
-        for s in songs:
-            fav = s.get("is_favorite", False)
-            col.controls.append(
-                ft.Container(
-                    content=ft.Row(
-                        controls=[
-                            ft.Container(
-                                content=ft.Icon(ft.Icons.MUSIC_NOTE, color="#3F51B5", size=22),
-                                padding=10,
-                                bgcolor="#E8EAF6",
-                                border_radius=10,
-                            ),
-                            ft.Column(
-                                controls=[
-                                    ft.Text(s["title"], weight=ft.FontWeight.BOLD, size=16, color="#263238"),
-                                    ft.Text(s["language"].capitalize(), size=12, color="#90A4AE"),
-                                ],
-                                expand=True,
-                                spacing=0,
-                            ),
-                            ft.Icon(ft.Icons.FAVORITE, color="#FF5252", size=22) if fav else ft.Icon(ft.Icons.CHEVRON_RIGHT, color="#CFD8DC", size=24),
-                        ],
-                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                    ),
-                    padding=ft.Padding(left=16, right=16, top=12, bottom=12),
-                    border_radius=15,
-                    bgcolor="white",
-                    on_click=lambda e, sid=s["id"]: show_song(sid),
-                    shadow=ft.BoxShadow(
-                        blur_radius=10,
-                        color=ft.Colors.with_opacity(0.05, "black"),
-                        offset=ft.Offset(0, 4)
-                    ),
-                    ink=True,
-                )
-            )
-        return col
-
-    # ---- Tab Bar ----
-    def make_tab_bar():
-        def select_tab(idx):
-            current_tab[0] = idx
-            show_home()
-
-        tamil_active = current_tab[0] == 0
-        telugu_active = current_tab[0] == 1
-
-        return ft.Container(
-             padding=ft.Padding(left=10, right=10, top=5, bottom=5),
-             bgcolor="#E1E5F2",
-             border_radius=25,
-             content=ft.Row(
-                controls=[
-                    ft.Container(
-                        content=ft.Text("Tamil", size=14, weight=ft.FontWeight.BOLD if tamil_active else ft.FontWeight.NORMAL, color="white" if tamil_active else "#5C6BC0"),
-                        bgcolor="#3F51B5" if tamil_active else "transparent",
-                        border_radius=20,
-                        padding=ft.Padding(left=20, right=20, top=8, bottom=8),
-                        on_click=lambda e: select_tab(0),
-                        expand=True,
-                        alignment=ft.alignment.Alignment(0, 0),
-                    ),
-                    ft.Container(
-                        content=ft.Text("Telugu", size=14, weight=ft.FontWeight.BOLD if telugu_active else ft.FontWeight.NORMAL, color="white" if telugu_active else "#5C6BC0"),
-                        bgcolor="#3F51B5" if telugu_active else "transparent",
-                        border_radius=20,
-                        padding=ft.Padding(left=20, right=20, top=8, bottom=8),
-                        on_click=lambda e: select_tab(1),
-                        expand=True,
-                        alignment=ft.alignment.Alignment(0, 0),
-                    ),
-                ],
-                spacing=5,
-            )
-        )
-
-    # ---- HOME SCREEN ----
-    def show_home():
-        try:
-            lang = "tamil" if current_tab[0] == 0 else "telugu"
-            song_list = make_song_list(lang, search_query[0])
-
+            # Header
             header = ft.Container(
-                content=ft.Row(
-                    controls=[
-                        ft.Row([
-                            ft.Image(src="icon.png", width=40, height=40, border_radius=8),
-                            ft.Column([
-                                ft.Text("GGGM", size=24, weight=ft.FontWeight.BOLD, color="white"),
-                                ft.Text("Songs of Worship", size=12, color="#C5CAE9"),
-                            ], spacing=2),
-                        ], spacing=10),
-                        ft.Row(
-                            controls=[
-                                ft.IconButton(ft.Icons.SEARCH, icon_color="white", on_click=lambda e: toggle_search(e)),
-                                ft.IconButton(ft.Icons.SETTINGS, icon_color="white", on_click=lambda e: show_admin()),
-                            ],
-                            spacing=0,
-                        ),
-                    ],
-                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                ),
-                gradient=ft.LinearGradient(
-                    begin=ft.alignment.Alignment(-1, -1),
-                    end=ft.alignment.Alignment(1, 1),
-                    colors=["#3F51B5", "#7986CB"]
-                ),
-                padding=ft.Padding(left=20, right=10, top=20, bottom=20),
+                content=ft.Row([
+                    ft.Text("GGGM", size=24, weight="bold", color="white"),
+                    ft.Row([
+                        ft.IconButton(ft.Icons.SEARCH, icon_color="white", on_click=lambda _: toggle_search()),
+                        ft.IconButton(ft.Icons.SYNC, icon_color="white", on_click=lambda _: cloud_sync())
+                    ])
+                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                bgcolor="#3F51B5", padding=20
             )
 
-            controls = [header]
+            # Tab Switcher
+            tabs = ft.Container(
+                content=ft.Row([
+                    ft.ElevatedButton("Tamil", on_click=lambda _: switch_lang(0), bgcolor="#3F51B5" if current_lang_tab[0]==0 else "white", color="white" if current_lang_tab[0]==0 else "black"),
+                    ft.ElevatedButton("Telugu", on_click=lambda _: switch_lang(1), bgcolor="#3F51B5" if current_lang_tab[0]==1 else "white", color="white" if current_lang_tab[0]==1 else "black"),
+                ], alignment=ft.MainAxisAlignment.CENTER),
+                padding=10
+            )
 
-            if search_open[0]:
-                controls.append(
-                    ft.Container(
-                        content=ft.TextField(
-                            hint_text="Search song title...",
-                            on_change=on_search_change,
-                            value=search_query[0],
-                            autofocus=True,
-                            border_color="#C5CAE9",
-                            border_radius=15,
-                            prefix_icon=ft.Icons.SEARCH,
-                            text_size=14,
-                            bgcolor="white",
-                        ),
-                        padding=ft.Padding(left=16, right=16, top=10, bottom=10),
-                    )
+            list_col = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True)
+            for s in songs:
+                list_col.controls.append(
+                    ft.ListTile(title=ft.Text(s["title"]), subtitle=ft.Text(s["language"]), on_click=lambda e, sid=s["id"]: show_song(sid))
                 )
 
-            controls.append(
-                ft.Container(
-                    content=make_tab_bar(),
-                    padding=ft.Padding(left=20, right=20, top=15, bottom=10),
-                )
-            )
-
-            controls.append(
-                ft.Container(content=song_list, padding=15, expand=True)
-            )
-
             page.controls.clear()
-            page.add(ft.SafeArea(content=ft.Column(controls=controls, spacing=0, expand=True), expand=True))
-            page.update()
-        except Exception as e:
-            page.controls.clear()
-            page.add(ft.SafeArea(ft.Text(f"Home error: {e}", color="red")))
+            page.navigation_bar = nav_bar
+            page.add(ft.SafeArea(content=ft.Column([header, tabs, list_col], expand=True), expand=True))
             page.update()
 
-    def on_search_change(e):
-        search_query[0] = e.control.value
-        show_home()
+        def switch_lang(idx):
+            current_lang_tab[0] = idx
+            show_home()
 
-    def toggle_search(e):
-        search_open[0] = not search_open[0]
-        if not search_open[0]:
-            search_query[0] = ""
-        show_home()
+        def toggle_search():
+            search_open[0] = not search_open[0]
+            show_home()
 
-    # ---- SONG DETAIL SCREEN ----
-    def show_song(song_id):
-        if history_stack[-1] != f"song:{song_id}": history_stack.append(f"song:{song_id}")
-        try:
-            song = next((s for s in SONGS if s["id"] == song_id), None)
+        # --- VIEW: SONG ---
+        def show_song(sid):
+            song = next((s for s in SONGS if s["id"] == sid), None)
             if not song: return
+            page.controls.clear()
+            page.add(
+                ft.SafeArea(
+                    content=ft.Column([
+                        ft.Container(content=ft.Row([ft.IconButton(ft.Icons.ARROW_BACK, on_click=lambda _: show_home()), ft.Text(song["title"], size=20)]), bgcolor="#3F51B5", padding=10),
+                        ft.Container(content=ft.Text(song["lyrics"], size=18), padding=20, expand=True)
+                    ], expand=True)
+                )
+            )
+            page.update()
 
-            font_size = [18]
-            lyrics_text = song.get("lyrics", "")
-            if not lyrics_text:
-                lyrics_text = "[No lyrics content found in database]"
+        # --- VIEW: BIBLE ---
+        def show_bible_library():
+            nav_bar.selected_index = 1
+            books = bible_eng.metadata.get(bible_eng.selected_lang, [])
             
-            lyrics_widget = ft.Text(lyrics_text, size=font_size[0], selectable=True, color="#37474F")
-
-            def update_font(delta):
-                font_size[0] = max(10, min(40, font_size[0] + delta))
-                lyrics_widget.size = font_size[0]
-                page.update()
-
-            def toggle_fav(e):
-                song["is_favorite"] = not song.get("is_favorite", False)
-                show_song(song_id)
-
-            is_fav = song.get("is_favorite", False)
+            grid = ft.GridView(expand=True, runs_count=3, spacing=10, padding=20)
+            for b in books:
+                grid.controls.append(
+                    ft.Container(content=ft.Text(b["name"], weight="bold"), bgcolor="white", padding=20, border_radius=10, on_click=lambda e, bk=b: show_reading_view(bk, 1))
+                )
 
             page.controls.clear()
+            page.navigation_bar = nav_bar
+            page.add(ft.SafeArea(content=ft.Column([ft.Container(content=ft.Text("Bible", size=24, color="white"), bgcolor="#3F51B5", padding=20), grid], expand=True), expand=True))
+            page.update()
+
+        def show_reading_view(book, chapter):
+            page.controls.clear()
+            # Quick Jump Strip
+            jump = ft.Row(scroll=ft.ScrollMode.AUTO, controls=[
+                ft.Container(content=ft.Text(str(i)), width=40, height=40, bgcolor="#3F51B5" if i==chapter else "white", on_click=lambda e, ch=i: show_reading_view(book, ch))
+                for i in range(1, book.get("chapters", 20)+1)
+            ])
             page.add(
-                ft.SafeArea(
-                    content=ft.Column(
-                        controls=[
-                            ft.Container(
-                                content=ft.Row(
-                                    controls=[
-                                        ft.IconButton(ft.Icons.ARROW_BACK, icon_color="white", on_click=lambda e: show_home()),
-                                        ft.Text(song["title"], size=16, color="white", weight=ft.FontWeight.BOLD, expand=True, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
-                                        ft.Row([
-                                            ft.IconButton(ft.Icons.REMOVE_CIRCLE_OUTLINE, icon_color="white", on_click=lambda e: update_font(-2)),
-                                            ft.IconButton(ft.Icons.ADD_CIRCLE_OUTLINE, icon_color="white", on_click=lambda e: update_font(2)),
-                                            ft.IconButton(ft.Icons.FAVORITE if is_fav else ft.Icons.FAVORITE_BORDER, icon_color="#FFCDD2" if is_fav else "white", on_click=toggle_fav),
-                                        ], spacing=0)
-                                    ],
-                                ),
-                                bgcolor="#3F51B5",
-                                padding=ft.Padding(left=5, right=5, top=5, bottom=5),
-                            ),
-                            ft.Container(
-                                content=ft.Column(
-                                    controls=[
-                                        ft.Text(song["title"], size=22, weight=ft.FontWeight.BOLD, color="#1A237E"),
-                                        ft.Divider(color="#E8EAF6", height=30),
-                                        lyrics_widget,
-                                        ft.Container(height=50),
-                                    ],
-                                    scroll=ft.ScrollMode.AUTO,
-                                ),
-                                padding=25,
-                                bgcolor="white",
-                                expand=True,
-                            ),
-                        ],
-                        spacing=0,
-                        expand=True,
-                    ),
-                    expand=True,
-                )
+                ft.SafeArea(content=ft.Column([
+                    ft.Container(content=ft.Row([ft.IconButton(ft.Icons.ARROW_BACK, on_click=lambda _: show_bible_library()), ft.Text(f"{book['name']} {chapter}", size=20)]), bgcolor="#3F51B5", padding=10),
+                    ft.Container(content=ft.Text(f"Sacred text for {book['name']} chapter {chapter}...", size=18), bgcolor="#FFF9E1", padding=20, expand=True),
+                    ft.Container(content=jump, padding=10, bgcolor="white")
+                ], expand=True))
             )
             page.update()
-        except Exception as e:
+
+        # --- VIEW: SETTINGS ---
+        def show_settings():
+            nav_bar.selected_index = 2
             page.controls.clear()
-            page.add(ft.SafeArea(ft.Text(f"Song detail error: {e}", color="red")))
+            page.navigation_bar = nav_bar
+            page.add(ft.SafeArea(content=ft.Column([ft.Container(content=ft.Text("Settings", size=24, color="white"), bgcolor="#3F51B5", padding=20), ft.ElevatedButton("Sync Now", on_click=lambda _: cloud_sync())])))
             page.update()
 
-    # ---- ADMIN / SYNC SCREEN ----
-    def show_admin():
-        if history_stack[-1] != "admin": history_stack.append("admin")
-        try:
-            status = ft.Text("Ready to sync.", color="#43A047", size=14)
+        # START
+        seed_default_songs()
+        show_home()
+        threading.Thread(target=cloud_sync, daemon=True).start()
 
-            def do_sync(e):
-                status.value = "Syncing from cloud..."
-                status.color = "#3F51B5"
-                page.update()
-                try:
-                    c = cloud_sync()
-                    status.value = f"Success! {c} songs updated."
-                    status.color = "#43A047"
-                except Exception as ex:
-                    status.value = f"Sync failed: {ex}"
-                    status.color = "#E53935"
-                page.update()
-
-            page.controls.clear()
-            page.add(
-                ft.SafeArea(
-                    content=ft.Column(
-                        controls=[
-                            ft.Container(
-                                content=ft.Row([
-                                    ft.IconButton(ft.Icons.ARROW_BACK, icon_color="white", on_click=lambda e: show_home()),
-                                    ft.Text("Settings", size=20, color="white", weight=ft.FontWeight.BOLD),
-                                ]),
-                                bgcolor="#3F51B5",
-                                padding=ft.Padding(left=5, right=5, top=10, bottom=10),
-                            ),
-                            ft.Container(
-                                content=ft.Column(
-                                    controls=[
-                                        ft.Text("App Appearance", size=24, weight=ft.FontWeight.BOLD, color="#1A237E"),
-                                        ft.Text("Current App Logo", size=14, color="#546E7A"),
-                                        ft.Container(height=10),
-                                        ft.Container(
-                                            content=ft.Image(src="icon.png", width=100, height=100, border_radius=15),
-                                            bgcolor="white",
-                                            padding=10,
-                                            border_radius=20,
-                                            shadow=ft.BoxShadow(blur_radius=10, color=ft.Colors.with_opacity(0.1, "black"))
-                                        ),
-                                        ft.Container(height=10),
-                                        ft.ElevatedButton(
-                                            content=ft.Row([ft.Icon(ft.Icons.LOCK), ft.Text("OPEN MASTER ADMIN PANEL")], alignment=ft.MainAxisAlignment.CENTER),
-                                            on_click=lambda e: show_login(),
-                                            height=50,
-                                            style=ft.ButtonStyle(
-                                                color="#3F51B5",
-                                                bgcolor="#E1E5F2",
-                                                shape=ft.RoundedRectangleBorder(radius=15),
-                                            )
-                                        ),
-                                        ft.Divider(height=40, color="#E8EAF6"),
-                                        ft.Text("Cloud Sync", size=24, weight=ft.FontWeight.BOLD, color="#1A237E"),
-                                        ft.Text("Update your song library with the latest lyrics from the server.", size=14, color="#546E7A"),
-                                        ft.Container(height=20),
-                                        ft.ElevatedButton(
-                                            content=ft.Row([ft.Icon(ft.Icons.SYNC), ft.Text("SYNC NOW")], alignment=ft.MainAxisAlignment.CENTER),
-                                            on_click=do_sync,
-                                            height=50,
-                                            style=ft.ButtonStyle(
-                                                color="white",
-                                                bgcolor="#3F51B5",
-                                                shape=ft.RoundedRectangleBorder(radius=15),
-                                            )
-                                        ),
-                                        ft.Container(height=15),
-                                        status,
-                                    ],
-                                    scroll=ft.ScrollMode.AUTO,
-                                ),
-                                padding=30,
-                                expand=True,
-                            ),
-                        ],
-                        spacing=0,
-                        expand=True,
-                    ),
-                    expand=True,
-                )
-            )
-            page.update()
-        except Exception as e:
-            page.controls.clear()
-            page.add(ft.SafeArea(ft.Text(f"Settings error: {e}", color="red")))
-            page.update()
-
-    # ---- ADMIN LOGIN SCREEN ----
-    def show_login():
-        if history_stack[-1] != "login": history_stack.append("login")
-        user_field = ft.TextField(label="Username", border_radius=12, prefix_icon=ft.Icons.PERSON)
-        pass_field = ft.TextField(label="Password", password=True, can_reveal_password=True, border_radius=15)
-        error_text = ft.Text("", color="red")
-
-        def attempt_login(e):
-            if user_field.value == "admin" and pass_field.value == "Grace@2024":
-                show_admin_editor()
-            else:
-                error_text.value = "Invalid credentials. Please try again."
-                page.update()
-
-        page.controls.clear()
-        page.add(
-            ft.SafeArea(
-                content=ft.Column(
-                    controls=[
-                        ft.Container(
-                            content=ft.Row([
-                                ft.IconButton(ft.Icons.ARROW_BACK, icon_color="white", on_click=lambda e: show_admin()),
-                                ft.Text("Admin Authentication", size=20, color="white", weight=ft.FontWeight.BOLD),
-                            ]),
-                            bgcolor="#3F51B5",
-                            padding=ft.Padding(left=5, right=5, top=10, bottom=10),
-                        ),
-                        ft.Container(
-                            content=ft.Column(
-                                controls=[
-                                    ft.Icon(ft.Icons.LOCK_PERSON, size=80, color="#3F51B5"),
-                                    ft.Text("Master Access", size=28, weight=ft.FontWeight.BOLD, color="#1A237E"),
-                                    ft.Text("Login to add or manage song lyrics.", color="#546E7A"),
-                                    ft.Container(height=20),
-                                    user_field,
-                                    pass_field,
-                                    error_text,
-                                    ft.Container(height=10),
-                                    ft.ElevatedButton(
-                                        "Login", on_click=attempt_login, width=float("inf"), height=50,
-                                        style=ft.ButtonStyle(bgcolor="#3F51B5", color="white", shape=ft.RoundedRectangleBorder(radius=15))
-                                    ),
-                                ],
-                                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                            ),
-                            padding=40,
-                        )
-                    ],
-                    spacing=0,
-                    expand=True,
-                ),
-                expand=True,
-            )
-        )
+    except Exception as e:
+        page.add(ft.Text(f"FATAL ERROR: {e}\n{traceback.format_exc()}", color="red"))
         page.update()
 
-    # ---- ADMIN EDITOR (DASHBOARD) SCREEN ----
-    def show_admin_editor():
-        if history_stack[-1] != "admin_editor": history_stack.append("admin_editor")
-        title_in = ft.TextField(label="Song Title", border_radius=12)
-        lang_in = ft.Dropdown(
-            label="Language",
-            options=[ft.dropdown.Option("tamil"), ft.dropdown.Option("telugu")],
-            border_radius=12,
-            value="tamil"
-        )
-        num_in = ft.TextField(label="Song Number (Optional)", border_radius=12)
-        lyrics_in = ft.TextField(label="Full Lyrics", multiline=True, min_lines=8, max_lines=15, border_radius=12)
-        status_in = ft.Text("", color="blue")
-        
-        # Save references for bulk upload
-        page.admin_status = status_in
-        page.admin_lang = lang_in.value
-
-        def push_to_cloud(e):
-            if not title_in.value or not lyrics_in.value:
-                status_in.value = "Error: Title and Lyrics are required."
-                status_in.color = "red"
-                page.update()
-                return
-
-            status_in.value = "Pushing to database..."
-            status_in.color = "blue"
-            page.update()
-
-            try:
-                import uuid
-                song_id = f"{lang_in.value[:2]}_{uuid.uuid4().hex[:8]}"
-                document = {
-                    "fields": {
-                        "title": {"stringValue": title_in.value},
-                        "language": {"stringValue": lang_in.value},
-                        "number": {"stringValue": num_in.value or ""},
-                        "lyrics": {"stringValue": lyrics_in.value.replace("\n", "\\n")},
-                        "category": {"stringValue": "General"},
-                        "composer": {"stringValue": "Unknown"}
-                    }
-                }
-                
-                req = urllib.request.Request(
-                    f"{FIRESTORE_URL}/{song_id}",
-                    data=json.dumps(document).encode("utf-8"),
-                    headers={"Content-Type": "application/json"},
-                    method="PATCH"
-                )
-                with urllib.request.urlopen(req) as r:
-                    if r.status == 200:
-                        status_in.value = f"Success! Uploaded as {song_id}."
-                        status_in.color = "green"
-                        title_in.value = ""
-                        lyrics_in.value = ""
-                        num_in.value = ""
-                    else:
-                        status_in.value = f"Failed (HTTP {r.status})"
-                        status_in.color = "red"
-            except Exception as ex:
-                status_in.value = f"Error: {ex}"
-                status_in.color = "red"
-            page.update()
-
-        page.controls.clear()
-        page.add(
-            ft.SafeArea(
-                content=ft.Column(
-                    controls=[
-                        ft.Container(
-                            content=ft.Row([
-                                ft.IconButton(ft.Icons.ARROW_BACK, icon_color="white", on_click=lambda e: show_login()),
-                                ft.Text("Cloud Management", size=20, color="white", weight=ft.FontWeight.BOLD),
-                            ]),
-                            bgcolor="#3F51B5",
-                            padding=ft.Padding(left=5, right=5, top=10, bottom=10),
-                        ),
-                        ft.Container(
-                            content=ft.Column(
-                                controls=[
-                                    ft.Divider(height=20, color="#E8EAF6"),
-                                    ft.Text("Manage / Delete Songs", size=24, weight=ft.FontWeight.BOLD, color="#1A237E"),
-                                    ft.Text("Deletions are permanent and sync to all users.", size=12, color="#546E7A"),
-                                    ft.Text(f"Total Songs: {len(SONGS)}", size=14, color="#546E7A"),
-                                ] + [
-                                    ft.Container(
-                                        content=ft.Row([
-                                            ft.Column([
-                                                ft.Text(s["title"], weight=ft.FontWeight.BOLD, size=16),
-                                                ft.Text(f"ID: {s['id']} | Lang: {s['language']}", size=12, color="#78909C"),
-                                            ], expand=True),
-                                            ft.IconButton(
-                                                ft.Icons.DELETE_OUTLINE, 
-                                                icon_color="red", 
-                                                tooltip="Delete from Cloud",
-                                                on_click=lambda e, sid=s['id']: delete_song(sid)
-                                            ),
-                                        ]),
-                                        padding=15,
-                                        bgcolor="#F8F9FB",
-                                        border_radius=12,
-                                        border=ft.border.all(1, "#E8EAF6"),
-                                    ) for s in sorted(SONGS, key=lambda x: x["title"])[:50] # Show top 50
-                                ] + [
-                                    ft.Text("Showing first 50 songs. Use search for more.", size=12, italic=True) if len(SONGS) > 50 else ft.Container()
-                                ],
-                                scroll=ft.ScrollMode.AUTO,
-                                spacing=15,
-                            ),
-                            padding=20,
-                            expand=True,
-                        )
-                    ],
-                    spacing=0,
-                    expand=True,
-                ),
-                expand=True,
-            )
-        )
-        page.update()
-
-    def delete_song(sid):
-        def do_delete():
-            try:
-                # Use our original Firebase REST DELETE
-                req = urllib.request.Request(f"{FIRESTORE_URL}/{sid}", method="DELETE")
-                with urllib.request.urlopen(req) as r:
-                    if r.status == 200:
-                        cloud_sync() # Refresh locally
-                        show_admin_editor() # Refresh UI
-            except Exception as ex:
-                print(f"Delete error: {ex}")
-        
-        threading.Thread(target=do_delete, daemon=True).start()
-
-    # ---- BIBLE SCREENS ----
-    def show_bible_library():
-        page.navigation_bar.selected_index = 1
-        if history_stack[-1] != "bible": history_stack.append("bible")
-        page.controls.clear()
-        
-        page.add(
-            ft.SafeArea(
-                content=ft.Column([
-                    ft.Container(
-                        content=ft.Text("GGGM Bible", size=24, color="white", weight=ft.FontWeight.BOLD),
-                        bgcolor="#3F51B5", padding=20, width=float("inf")
-                    ),
-                    ft.Container(
-                        content=ft.Column([
-                            ft.Text("Tamil & Telugu Bible loading...", size=16),
-                            ft.ProgressBar(width=400, color="#3F51B5")
-                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                        padding=50, expand=True
-                    )
-                ]),
-                expand=True
-            )
-        )
-        page.update()
-
-    # ---- START ----
-
-    show_home()
-    # Trigger auto-sync in background
-    threading.Thread(target=start_auto_sync, daemon=True).start()
-
-ft.app(main, assets_dir="assets")
+ft.app(target=main)
