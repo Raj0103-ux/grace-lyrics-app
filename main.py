@@ -2,6 +2,7 @@ import flet as ft
 import json
 import urllib.request
 import threading
+from src.ui.bible import BibleReader
 import time
 import os
 import uuid
@@ -122,6 +123,30 @@ def main(page: ft.Page):
     
     # Simple Navigation History to prevent app closure on back-swipe
     history_stack = ["home"]
+
+    # Initialize Bible Service
+    bible_service = BibleReader(page, history_stack)
+
+    # Navigation Hub Logic
+    def on_nav_change(e):
+        index = e.control.selected_index
+        if index == 0:
+            show_home()
+        elif index == 1:
+            bible_service.show_library()
+        elif index == 2:
+            show_admin()
+
+    page.navigation_bar = ft.NavigationBar(
+        destinations=[
+            ft.NavigationDestination(icon=ft.Icons.MUSIC_NOTE, label="GGGM-Lyrics"),
+            ft.NavigationDestination(icon=ft.Icons.MENU_BOOK, label="GGGM Bible"),
+            ft.NavigationDestination(icon=ft.Icons.SETTINGS, label="Admin & Sync"),
+        ],
+        on_change=on_nav_change,
+        selected_index=0,
+        bgcolor="#FFFFFF",
+    )
 
     def on_back_button(e):
         if len(history_stack) > 1:
@@ -823,6 +848,32 @@ def main(page: ft.Page):
                 print(f"Delete error: {ex}")
         
         threading.Thread(target=do_delete, daemon=True).start()
+
+    # ---- BIBLE SCREENS ----
+    def show_bible_library():
+        page.navigation_bar.selected_index = 1
+        if history_stack[-1] != "bible": history_stack.append("bible")
+        page.controls.clear()
+        
+        page.add(
+            ft.SafeArea(
+                content=ft.Column([
+                    ft.Container(
+                        content=ft.Text("GGGM Bible", size=24, color="white", weight=ft.FontWeight.BOLD),
+                        bgcolor="#3F51B5", padding=20, width=float("inf")
+                    ),
+                    ft.Container(
+                        content=ft.Column([
+                            ft.Text("Tamil & Telugu Bible loading...", size=16),
+                            ft.ProgressBar(width=400, color="#3F51B5")
+                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                        padding=50, expand=True
+                    )
+                ]),
+                expand=True
+            )
+        )
+        page.update()
 
     # ---- START ----
 
