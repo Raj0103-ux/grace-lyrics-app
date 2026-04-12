@@ -1,0 +1,16 @@
+[
+  {
+    "id": "ta_1",
+    "title": "கர்த்தாவே தேவர்களில் உமக்கொப்பனவர் யார்?",
+    "language": "tamil",
+    "lyrics": "கர்த்தாவே தேவர்களில் உமக்கொப்பனவர் யார்?\nவானத்திலும் பூமியிலும் உமக்கொப்பானவர் யார்?\n\n1. செங்கடலை நீர் பிளந்து\nஉந்தன் ஜனங்களை நடத்திச் சென்றீர்\nநீர் நல்லவர் சர்வ வல்லவர்\nஎன்றும் வாக்கு மாறாதவர்",
+    "is_favorite": true
+  },
+  {
+    "id": "te_1",
+    "title": "అగ్ని మండించు - Agni Mandinchu",
+    "language": "telugu",
+    "lyrics": "అగ్ని మండించు – నాలో అగ్ని మండించు\nపరిశుద్ధాత్ముడా – నాలో అగ్ని మండించు\n\nAgni Mandinchu – Naalo Agni Mandinchu\nParishuddhaathmudaa – Naalo Agni Mandinchu",
+    "is_favorite": false
+  }
+]
