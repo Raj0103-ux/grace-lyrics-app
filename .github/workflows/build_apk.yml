@@ -31,16 +31,21 @@ jobs:
       - name: Accept Android Licenses
         run: yes | flutter doctor --android-licenses
 
-      - name: Install Latest Flet CLI
-        run: pip install flet-cli==0.83.1
+      - name: Install Flet
+        run: pip install flet
 
       - name: Final Build
         run: |
-          # Ensure assets folder exists for icons
+          # Ensure assets folder exists and contains the icon
           mkdir -p assets
-          # Run the clean build with proper branding (picks up assets automatically)
-          # Build specifically for arm64-v8a to minimize size (most common for modern phones)
-          flet build apk --project GGGM --org com.grace.lyrics --arch arm64-v8a
+          cp icon.png assets/icon.png || true
+          # Retry the build up to 3 times to handle 'RemoteDisconnected' issues
+          for i in {1..3}; do
+            echo "Starting build attempt $i..."
+            flet build apk --project GGGM --org com.grace.lyrics --arch arm64-v8a && exit 0 || echo "Attempt $i failed, retrying in 10s..." && sleep 10
+          done
+          echo "All build attempts failed."
+          exit 1
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
