@@ -36,10 +36,12 @@ jobs:
 
       - name: Final Build
         run: |
-          # Ensure assets folder exists and contains the icon
+          # Clean old builds to save space
+          rm -rf build
+          # Ensure assets folder exists and contains exclusively the icon
           mkdir -p assets
           cp icon.png assets/icon.png || true
-          # Retry the build up to 3 times to handle 'RemoteDisconnected' issues
+          # Optimize for modern Android (arm64-v8a) to cut size by 60%
           for i in {1..3}; do
             echo "Starting build attempt $i..."
             flet build apk --project GGGM --org com.grace.lyrics --arch arm64-v8a && exit 0 || echo "Attempt $i failed, retrying in 10s..." && sleep 10

@@ -8,7 +8,8 @@ import os
 DB_PATH = "songs.json"
 FIREBASE_URL = "https://firestore.googleapis.com/v1/projects/grace-lyrics-545a1/databases/(default)/documents/songs"
 
-class LyricsState:
+# ===================== DATA MANAGER =====================
+class LyricsManager:
     def __init__(self):
         self.songs = []
         self._load()
@@ -17,171 +18,123 @@ class LyricsState:
             try:
                 with open(DB_PATH, "r", encoding="utf-8") as f: self.songs = json.load(f)
             except: pass
-    def sync(self, callback):
+    def sync_cloud(self, callback):
         def _task():
             try:
                 with urllib.request.urlopen(FIREBASE_URL) as r:
                     d = json.load(r)
-                    new_list = []
+                    nl = []
                     for doc in d.get("documents", []):
                         f = doc.get("fields", {})
-                        new_list.append({
+                        nl.append({
                             "title": f.get("title", {}).get("stringValue", "No Title"),
                             "lyrics": f.get("lyrics", {}).get("stringValue", ""),
                             "language": f.get("language", {}).get("stringValue", "tamil").lower()
                         })
-                    self.songs = new_list
-                    with open(DB_PATH, "w", encoding="utf-8") as out: json.dump(new_list, out)
+                    self.songs = nl
+                    with open(DB_PATH, "w", encoding="utf-8") as out: json.dump(nl, out)
                     callback(True)
             except: callback(False)
         threading.Thread(target=_task).start()
 
-ls = LyricsState()
+lm = LyricsManager()
 
+# ===================== MAIN APP =====================
 def main(page: ft.Page):
-    # ===================== UI CONSTANTS =====================
-    INDIGO_GRADIENT = ft.LinearGradient(
-        begin=ft.alignment.top_center,
-        end=ft.alignment.bottom_center,
-        colors=["#1A237E", "#283593"]
-    )
-    PARCHMENT_BG = "#FFF9E1" # Digital Hymn Book Texture
-    CARD_BG = "#FFFFFF"
-    
-    page.title = "Grace Lyrics Premium"
+    # UI THEME
+    page.title = "Grace Hub Zero-G"
     page.bgcolor = "#F5F5F5"
-    page.theme_mode = ft.ThemeMode.LIGHT
     page.padding = 0
+    page.theme_mode = ft.ThemeMode.LIGHT
     
-    st = {"lang": "tamil", "q": ""}
-    
-    # ===================== NAVIGATION LOGIC =====================
-    def route_change(route):
-        page.views.clear()
-        
-        # HOME VIEW
-        if page.route == "/":
-            home_view()
-        # SETTINGS VIEW
-        elif page.route == "/settings":
-            settings_view()
-        # LYRICS VIEW (Handled dynamically)
-        elif page.route.startswith("/song/"):
-            song_idx = int(page.route.split("/")[-1])
-            song_view(ls.songs[song_idx])
-            
+    st = {"lang": "tamil", "q": "", "view": "home"}
+
+    # GLOBAL LIST REFS
+    list_body = ft.ListView(expand=True, padding=ft.padding.only(left=15, right=15, bottom=20))
+    search_bar = ft.TextField(
+        hint_text="Search lyrics...", expand=True, bgcolor="white",
+        border_radius=12, border_color="transparent", prefix_icon=ft.Icons.SEARCH,
+        on_change=lambda e: filter_songs(e.control.value)
+    )
+
+    def filter_songs(q=""):
+        st["q"] = q
+        list_body.controls.clear()
+        results = [s for s in lm.songs if s["language"] == st["lang"] and q.lower() in s["title"].lower()]
+        for s in results:
+            list_body.controls.append(ft.Container(
+                content=ft.ListTile(
+                    leading=ft.Icon(ft.Icons.MUSIC_NOTE, color="#1A237E"),
+                    title=ft.Text(s["title"], weight="bold", color="black"),
+                    on_click=lambda e, song=s: show_detail(song)
+                ),
+                bgcolor="white", border_radius=12, border=ft.border.all(1, "#E8EAF6"), margin=ft.margin.symmetric(vertical=4),
+                shadow=ft.BoxShadow(blur_radius=10, color="#10000000", offset=ft.Offset(0, 4))
+            ))
         page.update()
 
-    def view_pop(view):
-        page.views.pop()
-        top_view = page.views[-1]
-        page.go(top_view.route)
+    def show_detail(s):
+        page.clean()
+        # HYMN BOOK STYLE READER
+        v_list = ft.ListView(expand=True, padding=30)
+        for line in s["lyrics"].split("\n"):
+            if line.strip(): v_list.controls.append(ft.Text(line, size=22, color="#2C3E50", weight="500"))
+            else: v_list.controls.append(ft.Container(height=15))
+            
+        page.appbar = ft.AppBar(
+            title=ft.Text(s["title"], color="white"),
+            bgcolor="#1A237E",
+            leading=ft.IconButton(ft.Icons.ARROW_BACK, icon_color="white", on_click=lambda _: render_home())
+        )
+        page.bgcolor = "#FFF9E1" # Parchment
+        page.add(v_list)
+        page.update()
 
-    page.on_route_change = route_change
-    page.on_view_pop = view_pop
+    def show_settings():
+        page.clean()
+        def msg(m): page.snack_bar = ft.SnackBar(ft.Text(m)); page.snack_bar.open = True; page.update()
+        page.appbar = ft.AppBar(title=ft.Text("Settings", color="white"), bgcolor="#1A237E", leading=ft.IconButton(ft.Icons.ARROW_BACK, icon_color="white", on_click=lambda _: render_home()))
+        page.bgcolor = "#F5F5F5"
+        page.add(ft.Container(padding=30, content=ft.Column([
+            ft.Text("Cloud Controls", size=24, weight="bold", color="black"),
+            ft.ListTile(
+                title=ft.Text("Sync Now with Firebase", color="black"),
+                leading=ft.Icon(ft.Icons.CLOUD_DOWNLOAD, color="#1A237E"),
+                on_click=lambda _: lm.sync_cloud(lambda s: msg("Sync Success!" if s else "Sync Fail") or render_home())
+            ),
+            ft.Divider(),
+            ft.Text("App Version 5.0.0 (IronLite)", color="grey")
+        ])))
+        page.update()
 
-    # ===================== COMPONENT: HOME =====================
-    def home_view():
-        list_body = ft.ListView(expand=True, padding=ft.padding.only(left=15, right=15, bottom=20))
+    def render_home():
+        page.clean()
+        page.bgcolor = "#F5F5F5"
+        page.appbar = None # Using Custom Header for Premium look
         
-        def filter_songs(q=""):
-            st["q"] = q
-            list_body.controls.clear()
-            results = [s for s in ls.songs if s["language"] == st["lang"] and q.lower() in s["title"].lower()]
-            for i, s in enumerate(ls.songs):
-                if s["language"] == st["lang"] and q.lower() in s["title"].lower():
-                    # HYMN BOOK STYLE CARD
-                    list_body.controls.append(ft.Container(
-                        content=ft.ListTile(
-                            leading=ft.Icon(ft.Icons.MUSIC_NOTE, color="#1A237E", size=20),
-                            title=ft.Text(s["title"], weight="bold", color="black", size=16),
-                            on_click=lambda e, idx=i: page.go(f"/song/{idx}")
-                        ),
-                        bgcolor=CARD_BG,
-                        border_radius=12,
-                        border=ft.border.all(1, "#E8EAF6"),
-                        shadow=ft.BoxShadow(blur_radius=10, color=ft.colors.with_opacity(0.05, "black"), offset=ft.Offset(0, 4)),
-                        margin=ft.margin.symmetric(vertical=6)
-                    ))
-            page.update()
-
-        # Premium Header
+        # PRO GRADIENT HEADER
         header = ft.Container(
-            gradient=INDIGO_GRADIENT,
+            gradient=ft.LinearGradient(begin=ft.Alignment(0, -1), end=ft.Alignment(0, 1), colors=["#1A237E", "#283593"]),
             padding=ft.padding.only(top=40, left=20, right=20, bottom=20),
             content=ft.Column([
                 ft.Row([
-                    ft.Image(src="icon.png", width=40, height=40),
-                    ft.Text("Grace Lyrics", color="white", size=24, weight="bold"),
-                    ft.IconButton(ft.Icons.SETTINGS, icon_color="white", on_click=lambda _: page.go("/settings"))
+                    ft.Row([ft.Image(src="icon.png", width=40, height=40), ft.Text("Grace Lyrics", color="white", size=24, weight="bold")]),
+                    ft.IconButton(ft.Icons.SETTINGS, icon_color="white", on_click=lambda _: show_settings())
                 ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                 ft.Container(height=10),
-                ft.TextField(
-                    hint_text="Search hymns...",
-                    bgcolor="white",
-                    border_radius=10,
-                    prefix_icon=ft.Icons.SEARCH,
-                    border_color="transparent",
-                    on_change=lambda e: filter_songs(e.control.value)
-                )
+                ft.Row([ft.Container(content=search_bar, expand=True)])
             ])
         )
 
-        lang_toggle = ft.Container(
-            padding=15,
-            content=ft.Row([
-                ft.ElevatedButton("TAMIL", expand=1, bgcolor="#E8EAF6" if st["lang"]=="tamil" else "white", color="#1A237E" if st["lang"]=="tamil" else "grey", on_click=lambda _: (st.update({"lang": "tamil"}), filter_songs(st["q"]))),
-                ft.ElevatedButton("TELUGU", expand=1, bgcolor="#E8EAF6" if st["lang"]=="telugu" else "white", color="#1A237E" if st["lang"]=="telugu" else "grey", on_click=lambda _: (st.update({"lang": "telugu"}), filter_songs(st["q"]))),
-            ], spacing=15)
-        )
+        lang_row = ft.Container(padding=15, content=ft.Row([
+            ft.ElevatedButton("TAMIL", expand=1, bgcolor="#E8EAF6" if st["lang"]=="tamil" else "white", color="#1A237E" if st["lang"]=="tamil" else "grey", on_click=lambda _: (st.update({"lang": "tamil"}), filter_songs())),
+            ft.ElevatedButton("TELUGU", expand=1, bgcolor="#E8EAF6" if st["lang"]=="telugu" else "white", color="#1A237E" if st["lang"]=="telugu" else "grey", on_click=lambda _: (st.update({"lang": "telugu"}), filter_songs())),
+        ], spacing=15))
 
-        page.views.append(ft.View("/", [header, lang_toggle, list_body], padding=0, bgcolor="#F5F5F5"))
+        page.add(header, lang_row, list_body)
         filter_songs(st["q"])
 
-    # ===================== COMPONENT: SETTINGS =====================
-    def settings_view():
-        def sync_now(e):
-            ls.sync(lambda success: (
-                page.show_snack_bar(ft.SnackBar(ft.Text("Cloud Sync Complete!" if success else "Connection Fail"))) if success else None,
-                page.go("/")
-            ))
-
-        page.views.append(ft.View("/settings", [
-            ft.AppBar(title=ft.Text("Settings", color="white"), bgcolor="#1A237E", leading=ft.IconButton(ft.Icons.ARROW_BACK, icon_color="white", on_click=lambda _: page.go("/"))),
-            ft.Container(padding=30, content=ft.Column([
-                ft.Text("Data Synchronization", size=20, weight="bold", color="black"),
-                ft.ListTile(
-                    title=ft.Text("Sync with Firebase", color="black"),
-                    subtitle=ft.Text("Pull latest lyrics from the cloud", color="grey"),
-                    leading=ft.Icon(ft.Icons.CLOUD_SYNC, color="#1A237E"),
-                    on_click=sync_now
-                ),
-                ft.Divider(),
-                ft.Text("Grace Lyrics Premium v4.0", size=12, color="grey")
-            ]))
-        ], bgcolor="white", padding=0))
-
-    # ===================== COMPONENT: SONG READING =====================
-    def song_view(s):
-        verses = s["lyrics"].split("\n")
-        v_list = ft.ListView(expand=True, padding=30)
-        for line in verses:
-            if line.strip():
-                # HYMN BOOK STYLE TYPOGRAPHY
-                v_list.controls.append(ft.Text(line, size=21, color="#2C3E50", weight="500", line_height=1.5))
-            else:
-                v_list.controls.append(ft.Container(height=15))
-
-        page.views.append(ft.View(f"/song", [
-            ft.AppBar(
-                title=ft.Text(s["title"], color="white"),
-                bgcolor="#1A237E",
-                leading=ft.IconButton(ft.Icons.ARROW_BACK, icon_color="white", on_click=lambda _: page.go("/"))
-            ),
-            v_list
-        ], bgcolor=PARCHMENT_BG, padding=0))
-
-    # Start the app
-    page.go("/")
+    # STARTING
+    render_home()
 
 ft.app(target=main)
