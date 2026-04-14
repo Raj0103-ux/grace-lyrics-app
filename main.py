@@ -53,7 +53,7 @@ lm = LyricsManager()
 def main(page: ft.Page):
     try:
         page.assets_dir = "assets"
-        page.title = "Gods Grace Gospel Ministry"
+        page.title = "GGGM"
         page.bgcolor = "#F5F5F5"
         page.theme_mode = ft.ThemeMode.LIGHT
         page.padding = 0
@@ -83,9 +83,10 @@ def main(page: ft.Page):
                 padding=ft.padding.only(top=40, left=20, right=20, bottom=20),
                 content=ft.Column([
                     ft.Row([
-                        ft.Row([ft.Image(src="icon.png", width=50, height=50, error_content=ft.Icon(ft.Icons.MUSIC_NOTE, color="white")), 
-                               ft.Column([ft.Text("Gods Grace", color="white", size=20, weight="bold", tight=True), 
-                                          ft.Text("Gospel Ministry", color="white", size=12)], spacing=0)]),
+                        ft.Row([
+                            ft.Image(src="icon.png", width=50, height=50, error_content=ft.Icon(ft.Icons.MUSIC_NOTE, color="white")), 
+                            ft.Text("GGGM", color="white", size=24, weight="bold")
+                        ]),
                         ft.IconButton(ft.Icons.SETTINGS, icon_color="white", on_click=lambda _: show_settings())
                     ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                     ft.Container(height=10),
@@ -139,7 +140,7 @@ def main(page: ft.Page):
                 ft.Container(height=20),
                 ft.ElevatedButton("SYNC NOW", icon=ft.Icons.SYNC, bgcolor="#1A237E", color="white", on_click=sync_act, height=60),
                 ft.Divider(),
-                ft.Text("GGGM v5.6.0 Debug", color="grey", size=12)
+                ft.Text("GGGM v5.7.0", color="grey", size=12)
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER))
             body_container.bgcolor = "#F5F5F5"
             page.update()
@@ -151,7 +152,6 @@ def main(page: ft.Page):
         render_home()
         
     except Exception:
-        # If the app crashes on start, show the error on screen!
         err_msg = traceback.format_exc()
         page.add(ft.Container(
             padding=20, bgcolor="red", expand=True,
