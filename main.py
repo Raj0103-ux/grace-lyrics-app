@@ -27,7 +27,7 @@ class LyricsManager:
     def set_db_path(self, path):
         self._db_path = path
 
-    def load(self, page=None):
+    def load(self):
         """
         Load songs with a fallback chain:
         1. Writable database file (synced updates)
@@ -43,22 +43,24 @@ class LyricsManager:
             except Exception as ex:
                 log(f"Load database error: {ex}")
 
-        # 2. Try seed file in assets (relative to assets_dir)
-        # In Flet APKs, assets are bundled and accessible via relative paths
-        seed_file = self._seed_path if os.path.exists(self._seed_path) else "songs.json"
+        # 2. Try seed file locations
+        # assets/songs.json (local dev) or songs.json (bundled in APK root)
+        seed_paths = ["assets/songs.json", "songs.json", "data/songs.json"]
         
-        if os.path.exists(seed_file):
-            try:
-                with open(seed_file, "r", encoding="utf-8") as f:
-                    self.songs = json.load(f)
-                log(f"Loaded {len(self.songs)} songs from seed file")
-                # Save it to the writable path immediately if we have one
-                if self._db_path:
-                    self.save()
-            except Exception as ex:
-                log(f"Load seed error: {ex}")
-        else:
-            log(f"No data found (database or seed)")
+        for seed_path in seed_paths:
+            if os.path.exists(seed_path):
+                try:
+                    with open(seed_path, "r", encoding="utf-8") as f:
+                        self.songs = json.load(f)
+                    log(f"Loaded {len(self.songs)} songs from seed: {seed_path}")
+                    # Save it to the writable path immediately so future syncs work
+                    if self._db_path:
+                        self.save()
+                    return
+                except Exception as ex:
+                    log(f"Load seed error ({seed_path}): {ex}")
+        
+        log(f"No database or seed found.")
 
     def save(self):
         try:
@@ -126,16 +128,19 @@ def main(page: ft.Page):
         page.theme_mode = ft.ThemeMode.LIGHT
         page.padding = 0
 
-        # Persistent storage path for Android/iOS
-        # Flet provides client_storage for key-value, but for large JSON we use files
-        data_dir = page.client_storage.get("data_dir")
+        # Resolve a writable data directory
+        data_dir = os.environ.get("FLET_APP_STORAGE_DATA")
         if not data_dir:
-            # On Android, this is the app-specific internal storage
-            data_dir = os.environ.get("FLET_APP_STORAGE_DATA", 
-                                      os.path.join(os.getcwd(), "data"))
+            # Fallback for Windows/Android local testing
+            data_dir = os.path.join(os.getcwd(), "data")
         
-        lm.set_db_path(os.path.join(data_dir, "songs.json"))
-        lm.load(page)
+        try:
+            os.makedirs(data_dir, exist_ok=True)
+            lm.set_db_path(os.path.join(data_dir, "songs.json"))
+            lm.load()
+        except Exception as e:
+            log(f"Storage setup error: {e}")
+            lm.load() # try loading without a writable path just in case
         log(f"App started. Songs in memory: {len(lm.songs)}")
 
         st = {"lang": "tamil", "q": "", "font_size": 22}
