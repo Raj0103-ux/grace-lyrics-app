@@ -67,12 +67,20 @@ def main(page: ft.Page):
         def filter_songs(q=None):
             if q is not None: st["q"] = q
             song_list.controls.clear()
-            results = [s for s in lm.songs if s["language"] == st["lang"] and st["q"].lower() in s["title"].lower()]
+            
+            # Smart Search: Check Title OR Lyrics content
+            query = st["q"].lower()
+            results = [s for s in lm.songs if s["language"] == st["lang"] and (query in s["title"].lower() or query in s["lyrics"].lower())]
+            
             for s in results:
+                # Option 1: Dual View (Subtitle shows English preview of lyrics)
+                preview = s["lyrics"].split("\n")[0][:40] + "..." if len(s["lyrics"]) > 0 else ""
+                
                 song_list.controls.append(ft.Container(
                     content=ft.ListTile(
                         leading=ft.Image(src="icon.png", width=30, height=30, error_content=ft.Icon(ft.Icons.MUSIC_NOTE)),
-                        title=ft.Text(s["title"], weight="bold", color="black"), 
+                        title=ft.Text(s["title"], weight="bold", color="black"),
+                        subtitle=ft.Text(preview, size=12, color="grey"), # Show English preview for Romanized lyrics
                         on_click=lambda e, song=s: show_reader(song)
                     ),
                     bgcolor="white", border_radius=12, margin=ft.margin.symmetric(vertical=4),
@@ -93,22 +101,26 @@ def main(page: ft.Page):
                     ft.IconButton(ft.Icons.SETTINGS, icon_color="white", on_click=lambda _: show_settings())
                 ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                 ft.Container(height=10),
-                ft.TextField(hint_text="Search songs...", expand=True, bgcolor="white", border_radius=12, border_color="transparent", prefix_icon=ft.Icons.SEARCH, on_change=lambda e: filter_songs(e.control.value))
+                ft.TextField(hint_text="Search title or lyrics...", expand=True, bgcolor="white", border_radius=12, border_color="transparent", prefix_icon=ft.Icons.SEARCH, on_change=lambda e: filter_songs(e.control.value))
             ])
         )
         
         lang_row = ft.Container(padding=15, content=ft.Row([
-            ft.ElevatedButton("TAMIL", expand=1, bgcolor="#E8EAF6" if st["lang"]=="tamil" else "white", color="#1A237E" if st["lang"]=="tamil" else "grey", on_click=lambda e: change_lang("tamil", e)), 
-            ft.ElevatedButton("TELUGU", expand=1, bgcolor="#E8EAF6" if st["lang"]=="telugu" else "white", color="#1A237E" if st["lang"]=="telugu" else "grey", on_click=lambda e: change_lang("telugu", e))
+            ft.ElevatedButton("TAMIL", expand=1, bgcolor="#E8EAF6" if st["lang"]=="tamil" else "white", color="#1A237E" if st["lang"]=="tamil" else "grey", on_click=lambda e: change_lang("tamil")), 
+            ft.ElevatedButton("TELUGU", expand=1, bgcolor="#E8EAF6" if st["lang"]=="telugu" else "white", color="#1A237E" if st["lang"]=="telugu" else "grey", on_click=lambda e: change_lang("telugu"))
         ], spacing=15))
 
-        def change_lang(l, e):
+        def change_lang(l):
             st["lang"] = l
-            # Update button colors manually
+            # Instant Visual Feedback
             for btn in lang_row.content.controls:
                 btn.bgcolor = "#E8EAF6" if btn.text.lower() == l else "white"
                 btn.color = "#1A237E" if btn.text.lower() == l else "grey"
-            filter_songs()
+            
+            # FORCE REFRESH: Clear the container first to force the phone to re-draw
+            song_list.controls.clear()
+            page.update() # First update shows it's clearing
+            filter_songs() # Second update brings in the new lang
 
         home_view = ft.Column([header, lang_row, song_list], spacing=0, expand=True)
         body_container = ft.Container(content=home_view, expand=True, bgcolor="#F5F5F5")
@@ -153,7 +165,7 @@ def main(page: ft.Page):
                 ft.Container(height=20),
                 ft.ElevatedButton("SYNC NOW", icon=ft.Icons.SYNC, bgcolor="#1A237E", color="white", on_click=sync_act, height=60),
                 ft.Divider(),
-                ft.Text("GGGM v5.8.0", color="grey", size=12)
+                ft.Text("GGGM v5.9.0", color="grey", size=12)
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER))
             body_container.bgcolor = "#F5F5F5"
             page.update()
