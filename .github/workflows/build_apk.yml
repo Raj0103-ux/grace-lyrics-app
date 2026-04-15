@@ -32,7 +32,7 @@ jobs:
         run: yes | flutter doctor --android-licenses
 
       - name: Install Flet
-        run: pip install flet
+        run: pip install flet==0.81.0
 
       - name: Final Build
         run: |
