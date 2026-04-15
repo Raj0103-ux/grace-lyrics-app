@@ -12,7 +12,9 @@ import time
 PROJECT_ID = "grace-lyrics-admin"
 BASE_URL = f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/databases/(default)/documents/songs"
 
-# ===================== LOGGING =====================
+# ===================== LOGGING & GLOBALS =====================
+_search_timer = None
+
 def log(msg):
     """Print debug messages to stderr so they show in console."""
     print(f"[GGGM] {msg}", file=sys.stderr, flush=True)
@@ -186,24 +188,33 @@ def main(page: ft.Page):
                     ))
 
             for s in results:
-                new_list.controls.append(ft.Container(
-                    content=ft.ListTile(
-                        leading=ft.Image(src="icon.png", width=30, height=30,
-                                         error_content=ft.Icon(ft.Icons.MUSIC_NOTE)),
-                        title=ft.Text(s["title"], weight="bold", color="black"),
-                        subtitle=ft.Text(get_smart_preview(s["lyrics"]), size=12, color="grey"),
-                        on_click=lambda e, song=s: show_reader(song)
-                    ),
-                    bgcolor="white", border_radius=12, margin=ft.margin.symmetric(vertical=4),
-                    shadow=ft.BoxShadow(blur_radius=10, color="#10000000")
+                # Optimized Item: Simple, no shadows, fast rendering
+                new_list.controls.append(ft.ListTile(
+                    leading=ft.Image(src="icon.png", width=30, height=30, 
+                                     error_content=ft.Icon(ft.Icons.MUSIC_NOTE)),
+                    title=ft.Text(s["title"], weight="bold", color="black", max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+                    subtitle=ft.Text(get_smart_preview(s["lyrics"]), size=12, color="grey", max_lines=1),
+                    on_click=lambda e, song=s: show_reader(song),
+                    content_padding=ft.padding.symmetric(horizontal=10, vertical=5)
                 ))
+                # Add a thin divider for visual separation (faster than containers with shadows)
+                new_list.controls.append(ft.Divider(height=1, color="#EEEEEE"))
             return new_list
 
         def filter_songs(q=None):
-            if q is not None:
-                st["q"] = q
-            list_container.content = build_song_list()
-            page.update()
+            global _search_timer
+            if q is not None: st["q"] = q
+            
+            # Search Debouncing: Wait 300ms after last keystroke before updating UI
+            if _search_timer:
+                _search_timer.cancel()
+            
+            def _apply():
+                list_container.content = build_song_list()
+                page.update()
+            
+            _search_timer = threading.Timer(0.3, _apply)
+            _search_timer.start()
 
         # HEADER
         header = ft.Container(
@@ -270,16 +281,11 @@ def main(page: ft.Page):
             ]
             page.appbar.visible = True
             v_list = ft.ListView(expand=True, padding=30)
+            lyrics_text = ft.Text(s["lyrics"], size=st["font_size"], color="#2C3E50", weight="500")
+            v_list.controls.append(lyrics_text)
 
             def refresh_reader():
-                v_list.controls.clear()
-                for line in s["lyrics"].split("\n"):
-                    if line.strip():
-                        v_list.controls.append(
-                            ft.Text(line.strip(), size=st["font_size"],
-                                    color="#2C3E50", weight="500"))
-                    else:
-                        v_list.controls.append(ft.Container(height=15))
+                lyrics_text.size = st["font_size"]
                 page.update()
 
             def zoom(delta):
