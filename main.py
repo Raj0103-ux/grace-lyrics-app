@@ -60,15 +60,16 @@ def main(page: ft.Page):
         
         st = {"lang": "tamil", "q": "", "font_size": 22}
         page.appbar = ft.AppBar(visible=False)
-        body_container = ft.Container(expand=True, bgcolor="#F5F5F5")
-        page.add(body_container)
-
-        def filter_songs(q=""):
-            st["q"] = q
-            items = []
-            results = [s for s in lm.songs if s["language"] == st["lang"] and q.lower() in s["title"].lower()]
+        
+        # PERSISTENT STRUCTURE
+        song_list = ft.ListView(expand=True, padding=ft.padding.only(left=15, right=15, bottom=20))
+        
+        def filter_songs(q=None):
+            if q is not None: st["q"] = q
+            song_list.controls.clear()
+            results = [s for s in lm.songs if s["language"] == st["lang"] and st["q"].lower() in s["title"].lower()]
             for s in results:
-                items.append(ft.Container(
+                song_list.controls.append(ft.Container(
                     content=ft.ListTile(
                         leading=ft.Image(src="icon.png", width=30, height=30, error_content=ft.Icon(ft.Icons.MUSIC_NOTE)),
                         title=ft.Text(s["title"], weight="bold", color="black"), 
@@ -77,30 +78,41 @@ def main(page: ft.Page):
                     bgcolor="white", border_radius=12, margin=ft.margin.symmetric(vertical=4),
                     shadow=ft.BoxShadow(blur_radius=10, color="#10000000")
                 ))
-            
-            header = ft.Container(
-                gradient=ft.LinearGradient(begin=ft.Alignment(0, -1), end=ft.Alignment(0, 1), colors=["#1A237E", "#283593"]),
-                padding=ft.padding.only(top=40, left=20, right=20, bottom=20),
-                content=ft.Column([
-                    ft.Row([
-                        ft.Row([
-                            ft.Image(src="icon.png", width=50, height=50, error_content=ft.Icon(ft.Icons.MUSIC_NOTE, color="white")), 
-                            ft.Text("GGGM", color="white", size=24, weight="bold")
-                        ]),
-                        ft.IconButton(ft.Icons.SETTINGS, icon_color="white", on_click=lambda _: show_settings())
-                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                    ft.Container(height=10),
-                    ft.TextField(hint_text="Search songs...", expand=True, bgcolor="white", border_radius=12, border_color="transparent", prefix_icon=ft.Icons.SEARCH, on_change=lambda e: filter_songs(e.control.value))
-                ])
-            )
-            
-            lang_row = ft.Container(padding=15, content=ft.Row([
-                ft.ElevatedButton("TAMIL", expand=1, bgcolor="#E8EAF6" if st["lang"]=="tamil" else "white", color="#1A237E" if st["lang"]=="tamil" else "grey", on_click=lambda _: (st.update({"lang": "tamil"}), filter_songs())), 
-                ft.ElevatedButton("TELUGU", expand=1, bgcolor="#E8EAF6" if st["lang"]=="telugu" else "white", color="#1A237E" if st["lang"]=="telugu" else "grey", on_click=lambda _: (st.update({"lang": "telugu"}), filter_songs()))
-            ], spacing=15))
-
-            body_container.content = ft.Column([header, lang_row, ft.ListView(controls=items, expand=True, padding=ft.padding.only(left=15, right=15, bottom=20))], spacing=0)
             page.update()
+
+        # FIXED HEADER (Never destroyed during search)
+        header = ft.Container(
+            gradient=ft.LinearGradient(begin=ft.Alignment(0, -1), end=ft.Alignment(0, 1), colors=["#1A237E", "#283593"]),
+            padding=ft.padding.only(top=40, left=20, right=20, bottom=20),
+            content=ft.Column([
+                ft.Row([
+                    ft.Row([
+                        ft.Image(src="icon.png", width=50, height=50, error_content=ft.Icon(ft.Icons.MUSIC_NOTE, color="white")), 
+                        ft.Text("GGGM", color="white", size=24, weight="bold")
+                    ]),
+                    ft.IconButton(ft.Icons.SETTINGS, icon_color="white", on_click=lambda _: show_settings())
+                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ft.Container(height=10),
+                ft.TextField(hint_text="Search songs...", expand=True, bgcolor="white", border_radius=12, border_color="transparent", prefix_icon=ft.Icons.SEARCH, on_change=lambda e: filter_songs(e.control.value))
+            ])
+        )
+        
+        lang_row = ft.Container(padding=15, content=ft.Row([
+            ft.ElevatedButton("TAMIL", expand=1, bgcolor="#E8EAF6" if st["lang"]=="tamil" else "white", color="#1A237E" if st["lang"]=="tamil" else "grey", on_click=lambda e: change_lang("tamil", e)), 
+            ft.ElevatedButton("TELUGU", expand=1, bgcolor="#E8EAF6" if st["lang"]=="telugu" else "white", color="#1A237E" if st["lang"]=="telugu" else "grey", on_click=lambda e: change_lang("telugu", e))
+        ], spacing=15))
+
+        def change_lang(l, e):
+            st["lang"] = l
+            # Update button colors manually
+            for btn in lang_row.content.controls:
+                btn.bgcolor = "#E8EAF6" if btn.text.lower() == l else "white"
+                btn.color = "#1A237E" if btn.text.lower() == l else "grey"
+            filter_songs()
+
+        home_view = ft.Column([header, lang_row, song_list], spacing=0, expand=True)
+        body_container = ft.Container(content=home_view, expand=True, bgcolor="#F5F5F5")
+        page.add(body_container)
 
         def show_reader(s):
             page.appbar.title = ft.Text(s["title"], color="white")
@@ -112,7 +124,7 @@ def main(page: ft.Page):
             ]
             page.appbar.visible = True
             v_list = ft.ListView(expand=True, padding=30)
-            def refresh():
+            def refresh_reader():
                 v_list.controls.clear()
                 for line in s["lyrics"].split("\n"):
                     if line.strip(): v_list.controls.append(ft.Text(line.strip(), size=st["font_size"], color="#2C3E50", weight="500"))
@@ -120,10 +132,11 @@ def main(page: ft.Page):
                 page.update()
             def zoom(delta):
                 st["font_size"] = max(12, min(44, st["font_size"]+delta))
-                refresh()
+                refresh_reader()
+            
             body_container.content = v_list
             body_container.bgcolor = "#FFF9E1"
-            refresh()
+            refresh_reader()
 
         def show_settings():
             page.appbar.title = ft.Text("Settings", color="white")
@@ -140,22 +153,22 @@ def main(page: ft.Page):
                 ft.Container(height=20),
                 ft.ElevatedButton("SYNC NOW", icon=ft.Icons.SYNC, bgcolor="#1A237E", color="white", on_click=sync_act, height=60),
                 ft.Divider(),
-                ft.Text("GGGM v5.7.0", color="grey", size=12)
+                ft.Text("GGGM v5.8.0", color="grey", size=12)
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER))
             body_container.bgcolor = "#F5F5F5"
             page.update()
 
         def render_home():
             page.appbar.visible = False
-            filter_songs(st["q"])
+            body_container.content = home_view
+            body_container.bgcolor = "#F5F5F5"
+            filter_songs()
 
-        render_home()
-        
+        # START 
+        filter_songs()
+
     except Exception:
         err_msg = traceback.format_exc()
-        page.add(ft.Container(
-            padding=20, bgcolor="red", expand=True,
-            content=ft.Text(f"CRITICAL ERROR:\n{err_msg}", color="white", selectable=True)
-        ))
+        page.add(ft.Container(padding=20, bgcolor="red", expand=True, content=ft.Text(f"INTERNAL ERROR:\n{err_msg}", color="white")))
 
 ft.app(target=main)
