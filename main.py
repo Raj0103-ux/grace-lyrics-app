@@ -4,6 +4,7 @@ import urllib.request
 import threading
 import os
 import traceback
+import re
 
 # ===================== CONFIG =====================
 DB_PATH = "songs.json"
@@ -62,33 +63,43 @@ def main(page: ft.Page):
         page.appbar = ft.AppBar(visible=False)
         
         # PERSISTENT STRUCTURE
-        song_list = ft.ListView(expand=True, padding=ft.padding.only(left=15, right=15, bottom=20))
+        list_container = ft.Container(expand=True)
         
-        def filter_songs(q=None):
-            if q is not None: st["q"] = q
-            song_list.controls.clear()
-            
-            # Smart Search: Check Title OR Lyrics content
+        def get_smart_preview(lyrics):
+            # Find the first line that contains at least one English/Latin character
+            for line in lyrics.split("\n"):
+                line = line.strip()
+                if re.search(r'[a-zA-Z]', line):
+                    return line[:40] + "..." if len(line) > 40 else line
+            # Fallback to the very first line if no English found
+            lines = [l for l in lyrics.split("\n") if l.strip()]
+            return lines[0][:40] + "..." if lines else ""
+
+        def build_song_list():
+            new_list = ft.ListView(expand=True, padding=ft.padding.only(left=15, right=15, bottom=20))
             query = st["q"].lower()
             results = [s for s in lm.songs if s["language"] == st["lang"] and (query in s["title"].lower() or query in s["lyrics"].lower())]
             
             for s in results:
-                # Option 1: Dual View (Subtitle shows English preview of lyrics)
-                preview = s["lyrics"].split("\n")[0][:40] + "..." if len(s["lyrics"]) > 0 else ""
-                
-                song_list.controls.append(ft.Container(
+                new_list.controls.append(ft.Container(
                     content=ft.ListTile(
                         leading=ft.Image(src="icon.png", width=30, height=30, error_content=ft.Icon(ft.Icons.MUSIC_NOTE)),
                         title=ft.Text(s["title"], weight="bold", color="black"),
-                        subtitle=ft.Text(preview, size=12, color="grey"), # Show English preview for Romanized lyrics
+                        subtitle=ft.Text(get_smart_preview(s["lyrics"]), size=12, color="grey"),
                         on_click=lambda e, song=s: show_reader(song)
                     ),
                     bgcolor="white", border_radius=12, margin=ft.margin.symmetric(vertical=4),
                     shadow=ft.BoxShadow(blur_radius=10, color="#10000000")
                 ))
+            return new_list
+
+        def filter_songs(q=None):
+            if q is not None: st["q"] = q
+            # Update the container with a brand new list to force re-draw
+            list_container.content = build_song_list()
             page.update()
 
-        # FIXED HEADER (Never destroyed during search)
+        # FIXED HEADER
         header = ft.Container(
             gradient=ft.LinearGradient(begin=ft.Alignment(0, -1), end=ft.Alignment(0, 1), colors=["#1A237E", "#283593"]),
             padding=ft.padding.only(top=40, left=20, right=20, bottom=20),
@@ -112,17 +123,13 @@ def main(page: ft.Page):
 
         def change_lang(l):
             st["lang"] = l
-            # Instant Visual Feedback
             for btn in lang_row.content.controls:
                 btn.bgcolor = "#E8EAF6" if btn.text.lower() == l else "white"
                 btn.color = "#1A237E" if btn.text.lower() == l else "grey"
-            
-            # FORCE REFRESH: Clear the container first to force the phone to re-draw
-            song_list.controls.clear()
-            page.update() # First update shows it's clearing
-            filter_songs() # Second update brings in the new lang
+            # FORCE RESTART: Blow away the old list and build a new one
+            filter_songs()
 
-        home_view = ft.Column([header, lang_row, song_list], spacing=0, expand=True)
+        home_view = ft.Column([header, lang_row, list_container], spacing=0, expand=True)
         body_container = ft.Container(content=home_view, expand=True, bgcolor="#F5F5F5")
         page.add(body_container)
 
@@ -165,7 +172,7 @@ def main(page: ft.Page):
                 ft.Container(height=20),
                 ft.ElevatedButton("SYNC NOW", icon=ft.Icons.SYNC, bgcolor="#1A237E", color="white", on_click=sync_act, height=60),
                 ft.Divider(),
-                ft.Text("GGGM v5.9.0", color="grey", size=12)
+                ft.Text("GGGM v6.0.0", color="grey", size=12)
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER))
             body_container.bgcolor = "#F5F5F5"
             page.update()
@@ -176,7 +183,7 @@ def main(page: ft.Page):
             body_container.bgcolor = "#F5F5F5"
             filter_songs()
 
-        # START 
+        # INITIAL DRAW
         filter_songs()
 
     except Exception:
