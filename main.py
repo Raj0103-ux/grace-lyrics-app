@@ -145,10 +145,17 @@ def main(page: ft.Page):
             lm.load() # try loading without a writable path just in case
         log(f"App started. Songs in memory: {len(lm.songs)}")
 
-        st = {"lang": "tamil", "q": "", "font_size": 22}
+        st = {"lang": "tamil", "q": "", "font_size": 22, "letter": None}
         page.appbar = ft.AppBar(visible=False)
 
+        # ---- ALPHABET DATA ----
+        TAMIL_ALPHA = ["அ", "ஆ", "இ", "ஈ", "உ", "ஊ", "எ", "ஏ", "ஐ", "ஒ", "ஓ", "க", "ச", "ஞ", "த", "ந", "ப", "ம", "ய", "வ"]
+        TELUGU_ALPHA = ["అ", "ఆ", "ఇ", "ఈ", "ఉ", "ఊ", "ఎ", "ఏ", "ఐ", "ఒ", "ఓ", "ఔ", "క", "గ", "చ", "జ", "ట", "డ", "త", "ద", "న", "ప", "బ", "మ", "య", "ర", "ల", "వ", "స", "హ"]
+        ENGLISH_ALPHA = [chr(i) for i in range(65, 91)] # A-Z
+
+        # PERSISTENT STRUCTURE
         list_container = ft.Container(expand=True)
+        alpha_container = ft.Container(padding=ft.padding.only(left=15, right=15, bottom=10))
 
         def get_smart_preview(lyrics):
             for line in lyrics.split("\n"):
@@ -158,62 +165,107 @@ def main(page: ft.Page):
             lines = [l for l in lyrics.split("\n") if l.strip()]
             return (lines[0][:40] + "...") if lines else ""
 
+        def build_alpha_row():
+            """Build the horizontal alphabet selector."""
+            current_alphas = []
+            if st["lang"] == "tamil":
+                current_alphas = TAMIL_ALPHA
+            else:
+                current_alphas = ENGLISH_ALPHA + ["|"] + TELUGU_ALPHA
+            
+            row = ft.Row(scroll=ft.ScrollMode.ALWAYS, spacing=10)
+            
+            # "ALL" button
+            row.controls.append(ft.Container(
+                content=ft.Text("ALL", color="white" if st["letter"] == None else "#1A237E", weight="bold"),
+                padding=ft.padding.symmetric(horizontal=15, vertical=8),
+                bgcolor="#1A237E" if st["letter"] == None else "#E8EAF6",
+                border_radius=20,
+                on_click=lambda _: select_letter(None)
+            ))
+
+            for char in current_alphas:
+                if char == "|":
+                    row.controls.append(ft.VerticalDivider(width=1, color="grey"))
+                    continue
+                
+                is_sel = st["letter"] == char
+                row.controls.append(ft.Container(
+                    content=ft.Text(char, color="white" if is_sel else "#1A237E", weight="bold"),
+                    padding=ft.padding.symmetric(horizontal=15, vertical=8),
+                    bgcolor="#1A237E" if is_sel else "#E8EAF6",
+                    border_radius=20,
+                    on_click=lambda _, c=char: select_letter(c)
+                ))
+            return row
+
+        def select_letter(char):
+            st["letter"] = char
+            # Refresh UI
+            filter_songs()
+
         def build_song_list():
             new_list = ft.ListView(expand=True, padding=ft.padding.only(left=15, right=15, bottom=20))
             query = st["q"].lower()
-            results = [s for s in lm.songs
-                       if s.get("language", "") == st["lang"]
-                       and (query in s.get("title", "").lower() or query in s.get("lyrics", "").lower())]
+            
+            # Optimization: Filter the list twice. First by language.
+            results = [s for s in lm.songs if s.get("language", "") == st["lang"]]
+            
+            # If query exists, search everywhere (ignores letter index)
+            if query:
+                results = [s for s in results if (query in s.get("title", "").lower() or query in s.get("lyrics", "").lower())]
+            # Otherwise, use alphabet filter if selected
+            elif st["letter"]:
+                l = st["letter"].lower()
+                results = [s for s in results if s.get("title", "").lower().strip().startswith(l)]
+            # If nothing selected, show only first 50 songs to prevent initial lag
+            elif not query and not st["letter"] and len(results) > 50:
+                results = results[:50]
 
-            if not results and not st["q"]:
-                count_this_lang = sum(1 for s in lm.songs if s.get("language", "") == st["lang"])
-                if len(lm.songs) == 0:
-                    new_list.controls.append(ft.Container(
-                        content=ft.Column([
-                            ft.Icon(ft.Icons.CLOUD_DOWNLOAD, size=60, color="#9E9E9E"),
-                            ft.Text("No songs yet!", size=20, weight="bold", color="#616161"),
-                            ft.Text("Tap Settings ⚙ → SYNC NOW\nto download songs from cloud.",
-                                    size=14, color="#9E9E9E", text_align=ft.TextAlign.CENTER),
-                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
-                        padding=60, alignment=ft.Alignment(0, 0)
-                    ))
-                elif count_this_lang == 0:
-                    new_list.controls.append(ft.Container(
-                        content=ft.Column([
-                            ft.Icon(ft.Icons.MUSIC_OFF, size=60, color="#9E9E9E"),
-                            ft.Text(f"No {st['lang'].title()} songs.", size=18, weight="bold", color="#616161"),
-                            ft.Text("Try switching the language tab.", size=14, color="#9E9E9E"),
-                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
-                        padding=60, alignment=ft.Alignment(0, 0)
-                    ))
+            if not results and (st["q"] or st["letter"]):
+                new_list.controls.append(ft.Container(
+                    content=ft.Text(f"No songs found matching your filter.", color="grey"),
+                    padding=40, alignment=ft.Alignment(0, 0)
+                ))
+            elif not results:
+                new_list.controls.append(ft.Container(
+                    content=ft.Column([
+                        ft.Icon(ft.Icons.CLOUD_DOWNLOAD, size=60, color="#9E9E9E"),
+                        ft.Text("No songs yet!", size=20, weight="bold", color="#616161"),
+                        ft.Text("Tap Settings ⚙ → SYNC NOW\nto download songs from cloud.",
+                                size=14, color="#9E9E9E", text_align=ft.TextAlign.CENTER),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
+                    padding=60, alignment=ft.Alignment(0, 0)
+                ))
 
             for s in results:
                 # Optimized Item: Simple, no shadows, fast rendering
                 new_list.controls.append(ft.ListTile(
                     leading=ft.Image(src="icon.png", width=30, height=30, 
                                      error_content=ft.Icon(ft.Icons.MUSIC_NOTE)),
-                    title=ft.Text(s["title"], weight="bold", color="black", max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
-                    subtitle=ft.Text(get_smart_preview(s["lyrics"]), size=12, color="grey", max_lines=1),
+                    title=ft.Text(s.get("title", "Untitled"), weight="bold", color="black", max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+                    subtitle=ft.Text(get_smart_preview(s.get("lyrics", "")), size=12, color="grey", max_lines=1),
                     on_click=lambda e, song=s: show_reader(song),
                     content_padding=ft.padding.symmetric(horizontal=10, vertical=5)
                 ))
-                # Add a thin divider for visual separation (faster than containers with shadows)
                 new_list.controls.append(ft.Divider(height=1, color="#EEEEEE"))
             return new_list
 
         def filter_songs(q=None):
             global _search_timer
-            if q is not None: st["q"] = q
+            if q is not None: 
+                st["q"] = q
+                if q: st["letter"] = None # Disable letter filter while searching
             
-            # Search Debouncing: Wait 300ms after last keystroke before updating UI
             if _search_timer:
                 _search_timer.cancel()
             
             def _apply():
                 list_container.content = build_song_list()
+                alpha_container.content = build_alpha_row()
                 page.update()
             
-            _search_timer = threading.Timer(0.3, _apply)
+            _search_timer = threading.Timer(0.2, _apply)
             _search_timer.start()
 
         # HEADER
@@ -256,13 +308,14 @@ def main(page: ft.Page):
 
         def change_lang(l):
             st["lang"] = l
+            st["letter"] = None
             for btn in lang_row.content.controls:
                 label = str(btn.content).lower() if btn.content else ""
                 btn.bgcolor = "#E8EAF6" if label == l else "white"
                 btn.color = "#1A237E" if label == l else "grey"
             filter_songs()
 
-        home_view = ft.Column([header, lang_row, list_container], spacing=0, expand=True)
+        home_view = ft.Column([header, lang_row, alpha_container, list_container], spacing=0, expand=True)
         body_container = ft.Container(content=home_view, expand=True, bgcolor="#F5F5F5")
         page.add(body_container)
 
@@ -329,23 +382,39 @@ def main(page: ft.Page):
                         songs = lm.sync_from_cloud()
                         log(f"Sync complete: {len(songs)} songs fetched")
 
+                        # Update data
                         lm.songs = songs
                         lm.save()
 
-                        # Update UI from background thread (safe in Flet 0.81)
+                        # Clear current filter to show fresh results
+                        st["letter"] = None
+                        st["q"] = ""
+
+                        # Update UI
                         progress_ring.visible = False
                         sync_btn.disabled = False
-                        status_text.value = f"Done! {len(songs)} songs synced."
+                        status_text.value = f"Success! {len(songs)} songs live."
                         status_text.color = "#2E7D32"
                         song_count_text.value = f"Local songs: {len(songs)}"
+                        page.update()
+                        
+                        # Show snackbar (Flet 0.81 compat)
+                        sb = ft.SnackBar(content=ft.Text(f"✅ Synced {len(songs)} songs live!"))
+                        sb.open = True
+                        page.snack_bar = sb
                         page.update()
 
                     except Exception as ex:
                         log(f"Sync error: {traceback.format_exc()}")
                         progress_ring.visible = False
                         sync_btn.disabled = False
-                        status_text.value = f"Error: {ex}"
+                        status_text.value = f"Sync Error. Please retry."
                         status_text.color = "#C62828"
+                        page.update()
+                        
+                        sb = ft.SnackBar(content=ft.Text(f"❌ Sync failed. Try again."))
+                        sb.open = True
+                        page.snack_bar = sb
                         page.update()
 
                 threading.Thread(target=_bg_sync, daemon=True).start()
