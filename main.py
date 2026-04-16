@@ -145,7 +145,7 @@ def main(page: ft.Page):
             lm.load() # try loading without a writable path just in case
         log(f"App started. Songs in memory: {len(lm.songs)}")
 
-        st = {"lang": "tamil", "q": "", "font_size": 22, "letter": None}
+        st = {"lang": "tamil", "q": "", "font_size": 22, "letter": None, "script": "native"}
         page.appbar = ft.AppBar(visible=False)
 
         # ---- ALPHABET DATA ----
@@ -156,6 +156,7 @@ def main(page: ft.Page):
         # PERSISTENT STRUCTURE
         list_container = ft.Container(expand=True)
         alpha_container = ft.Container(padding=ft.padding.only(left=15, right=15, bottom=10))
+        script_row_container = ft.Container(padding=ft.padding.only(left=15, right=15, bottom=5))
 
         def get_smart_preview(lyrics):
             for line in lyrics.split("\n"):
@@ -165,34 +166,52 @@ def main(page: ft.Page):
             lines = [l for l in lyrics.split("\n") if l.strip()]
             return (lines[0][:40] + "...") if lines else ""
 
+        def build_script_row():
+            """Toggle between English and Native Alphabets."""
+            native_label = "TAMIL" if st["lang"] == "tamil" else "TELUGU"
+            return ft.Row([
+                ft.TextButton(
+                    "English Letters", 
+                    style=ft.ButtonStyle(color="#1A237E" if st["script"] == "english" else "grey"),
+                    on_click=lambda _: change_script("english")
+                ),
+                ft.Text(" • ", color="grey"),
+                ft.TextButton(
+                    f"{native_label} Letters", 
+                    style=ft.ButtonStyle(color="#1A237E" if st["script"] == "native" else "grey"),
+                    on_click=lambda _: change_script("native")
+                ),
+            ], alignment=ft.MainAxisAlignment.CENTER)
+
+        def change_script(s):
+            st["script"] = s
+            st["letter"] = None
+            filter_songs()
+
         def build_alpha_row():
             """Build the horizontal alphabet selector."""
             current_alphas = []
-            if st["lang"] == "tamil":
-                current_alphas = TAMIL_ALPHA
+            if st["script"] == "native":
+                current_alphas = TAMIL_ALPHA if st["lang"] == "tamil" else TELUGU_ALPHA
             else:
-                current_alphas = ENGLISH_ALPHA + ["|"] + TELUGU_ALPHA
+                current_alphas = ENGLISH_ALPHA
             
             row = ft.Row(scroll=ft.ScrollMode.ALWAYS, spacing=10)
             
             # "ALL" button
             row.controls.append(ft.Container(
                 content=ft.Text("ALL", color="white" if st["letter"] == None else "#1A237E", weight="bold"),
-                padding=ft.padding.symmetric(horizontal=15, vertical=8),
+                padding=ft.padding.symmetric(horizontal=12, vertical=6),
                 bgcolor="#1A237E" if st["letter"] == None else "#E8EAF6",
                 border_radius=20,
                 on_click=lambda _: select_letter(None)
             ))
 
             for char in current_alphas:
-                if char == "|":
-                    row.controls.append(ft.VerticalDivider(width=1, color="grey"))
-                    continue
-                
                 is_sel = st["letter"] == char
                 row.controls.append(ft.Container(
                     content=ft.Text(char, color="white" if is_sel else "#1A237E", weight="bold"),
-                    padding=ft.padding.symmetric(horizontal=15, vertical=8),
+                    padding=ft.padding.symmetric(horizontal=12, vertical=6),
                     bgcolor="#1A237E" if is_sel else "#E8EAF6",
                     border_radius=20,
                     on_click=lambda _, c=char: select_letter(c)
@@ -217,7 +236,18 @@ def main(page: ft.Page):
             # Otherwise, use alphabet filter if selected
             elif st["letter"]:
                 l = st["letter"].lower()
-                results = [s for s in results if s.get("title", "").lower().strip().startswith(l)]
+                # SMART FILTER: Check both chunks of a title (e.g. "Native - English")
+                def check_match(song):
+                    title = song.get("title", "").lower()
+                    parts = [p.strip() for p in title.split("-")]
+                    for p in parts:
+                        if p.startswith(l): return True
+                    # Fallback: check first character of lyrics
+                    lyrics_start = song.get("lyrics", "").strip()[:5].lower()
+                    if lyrics_start.startswith(l): return True
+                    return False
+                    
+                results = [s for s in results if check_match(s)]
             # If nothing selected, show only first 50 songs to prevent initial lag
             elif not query and not st["letter"] and len(results) > 50:
                 results = results[:50]
@@ -263,6 +293,7 @@ def main(page: ft.Page):
             def _apply():
                 list_container.content = build_song_list()
                 alpha_container.content = build_alpha_row()
+                script_row_container.content = build_script_row()
                 page.update()
             
             _search_timer = threading.Timer(0.2, _apply)
@@ -315,7 +346,7 @@ def main(page: ft.Page):
                 btn.color = "#1A237E" if label == l else "grey"
             filter_songs()
 
-        home_view = ft.Column([header, lang_row, alpha_container, list_container], spacing=0, expand=True)
+        home_view = ft.Column([header, lang_row, script_row_container, alpha_container, list_container], spacing=0, expand=True)
         body_container = ft.Container(content=home_view, expand=True, bgcolor="#F5F5F5")
         page.add(body_container)
 
