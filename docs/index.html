@@ -11,7 +11,16 @@
     .btn-primary { background: #3F51B5; border: none; }
     .btn-primary:hover { background: #303F9F; }
     .status-msg { font-size: 14px; font-weight: 500; margin-top: 10px; }
-    #song-list { max-height: 600px; overflow-y: auto; }
+    .song-list { max-height: 600px; overflow-y: auto; }
+    .library-tabs .btn { border-radius: 999px; font-weight: 600; }
+    .library-tabs .btn.active { background: #3F51B5; color: white; border-color: #3F51B5; }
+    .song-row { border-bottom: 1px solid #E5E7EB; padding: 14px 0; }
+    .song-row:last-child { border-bottom: none; }
+    .song-title { font-size: 20px; font-weight: 700; line-height: 1.25; }
+    .song-meta { font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: #6B7280; }
+    .song-preview { font-size: 13px; color: #6B7280; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bulk-toolbar { background: #EEF2FF; border-radius: 14px; padding: 12px 14px; }
+    .library-empty { color: #6B7280; text-align: center; padding: 36px 12px; }
   </style>
 </head>
 <body>
@@ -59,11 +68,27 @@
         <div class="col-md-7">
            <div class="card p-4">
              <div class="d-flex justify-content-between align-items-center mb-3">
-                <h4>Firebase Songs Library</h4>
+                <div>
+                  <h4 class="mb-1">Firebase Songs Library</h4>
+                  <div class="text-muted small">All songs from Firebase, split into Tamil and Telugu lists.</div>
+                </div>
                 <button class="btn btn-sm btn-outline-secondary" onclick="loadSongs()">Refresh List</button>
              </div>
+             <div class="d-flex gap-2 mb-3 library-tabs">
+               <button id="tab-tamil" class="btn btn-outline-primary active" onclick="setLibraryTab('tamil')">Tamil</button>
+               <button id="tab-telugu" class="btn btn-outline-primary" onclick="setLibraryTab('telugu')">Telugu</button>
+             </div>
+             <div class="bulk-toolbar d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+               <div class="small fw-semibold" id="bulk-summary">Loading songs...</div>
+               <div class="d-flex flex-wrap gap-2">
+                 <button class="btn btn-sm btn-outline-secondary" onclick="toggleSelectVisible(true)">Select Visible</button>
+                 <button class="btn btn-sm btn-outline-secondary" onclick="toggleSelectVisible(false)">Clear Visible</button>
+                 <button class="btn btn-sm btn-danger" onclick="bulkDeleteSelected()">Delete Selected</button>
+               </div>
+             </div>
              <div id="song-list-container">
-                <div id="song-list">Loading from Firebase...</div>
+                <div id="song-list-tamil" class="song-list">Loading from Firebase...</div>
+                <div id="song-list-telugu" class="song-list" style="display:none;"></div>
              </div>
            </div>
         </div>
@@ -77,6 +102,9 @@
     const API_BASE = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/songs`;
     
     let authPass = "";
+    let songsCache = [];
+    let activeLibraryTab = "tamil";
+    const selectedSongIds = new Set();
 
     function checkLogin() {
       const p = document.getElementById('pass').value;
@@ -116,7 +144,7 @@
         });
         
         if (res.ok) { 
-           status.innerText = "Success! Saved to Firebase.";
+            status.innerText = "Success! Saved to Firebase.";
            status.className = "status-msg text-success";
            document.getElementById('title').value = "";
            document.getElementById('lyrics').value = "";
@@ -173,30 +201,18 @@
     }
 
     async function loadSongs() {
-      const list = document.getElementById('song-list');
+      const tamilList = document.getElementById('song-list-tamil');
+      const teluguList = document.getElementById('song-list-telugu');
+      tamilList.innerHTML = "Loading from Firebase...";
+      teluguList.innerHTML = "Loading from Firebase...";
+
       try {
-        const res = await fetch(API_BASE);
-        const data = await res.json();
-        const docs = data.documents || [];
-        
-        if (docs.length === 0) { list.innerHTML = "Firebase collection is empty."; return; }
-        
-        list.innerHTML = docs.map(doc => {
-          const sid = doc.name.split("/").pop();
-          const title = doc.fields.title ? doc.fields.title.stringValue : "Untitled";
-          const lang = doc.fields.language ? doc.fields.language.stringValue : "tamil";
-          return `
-            <div class="d-flex justify-content-between border-bottom py-2 align-items-center">
-              <div>
-                <div class="fw-bold">${title}</div>
-                <small class="text-muted">${lang.toUpperCase()}</small>
-              </div>
-              <button class="btn btn-sm btn-outline-danger" onclick="delSong('${sid}', '${title}')">Delete</button>
-            </div>
-          `;
-        }).join('');
+        songsCache = await fetchAllSongs();
+        selectedSongIds.clear();
+        renderSongLists();
       } catch (e) {
-        list.innerHTML = "Error loading from Firebase. Check Rules.";
+        tamilList.innerHTML = "Error loading from Firebase. Check Rules.";
+        teluguList.innerHTML = "Error loading from Firebase. Check Rules.";
       }
     }
 
@@ -206,6 +222,139 @@
         await fetch(`${API_BASE}/${id}`, { method: 'DELETE' });
         loadSongs();
       } catch(e) { alert("Delete failed."); }
+    }
+
+    async function fetchAllSongs() {
+      const docs = [];
+      let nextPageToken = "";
+
+      while (true) {
+        const url = nextPageToken ? `${API_BASE}?pageToken=${encodeURIComponent(nextPageToken)}` : API_BASE;
+        const res = await fetch(url);
+        const data = await res.json();
+        docs.push(...(data.documents || []));
+
+        if (!data.nextPageToken) break;
+        nextPageToken = data.nextPageToken;
+      }
+
+      return docs
+        .map(doc => {
+          const sid = doc.name.split("/").pop();
+          const fields = doc.fields || {};
+          const title = fields.title ? fields.title.stringValue : "Untitled";
+          const language = fields.language ? fields.language.stringValue.toLowerCase() : "tamil";
+          const lyrics = fields.lyrics ? fields.lyrics.stringValue : "";
+          const preview = lyrics.split(/\r?\n/).map(line => line.trim()).find(Boolean) || "No lyrics preview";
+          return { id: sid, title, language, lyrics, preview };
+        })
+        .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: "base" }));
+    }
+
+    function setLibraryTab(tab) {
+      activeLibraryTab = tab;
+      document.getElementById('tab-tamil').classList.toggle('active', tab === 'tamil');
+      document.getElementById('tab-telugu').classList.toggle('active', tab === 'telugu');
+      document.getElementById('song-list-tamil').style.display = tab === 'tamil' ? 'block' : 'none';
+      document.getElementById('song-list-telugu').style.display = tab === 'telugu' ? 'block' : 'none';
+      updateBulkSummary();
+    }
+
+    function renderSongLists() {
+      renderSongListForLanguage('tamil');
+      renderSongListForLanguage('telugu');
+      setLibraryTab(activeLibraryTab);
+    }
+
+    function renderSongListForLanguage(language) {
+      const list = document.getElementById(`song-list-${language}`);
+      const songs = songsCache.filter(song => song.language === language);
+
+      if (songs.length === 0) {
+        list.innerHTML = `<div class="library-empty">No ${language} songs found in Firebase.</div>`;
+        updateBulkSummary();
+        return;
+      }
+
+      list.innerHTML = songs.map(song => `
+        <div class="song-row d-flex justify-content-between gap-3">
+          <div class="d-flex gap-3 flex-grow-1 align-items-start">
+            <input class="form-check-input mt-1" type="checkbox" ${selectedSongIds.has(song.id) ? 'checked' : ''} onchange="toggleSongSelection('${song.id}', this.checked)">
+            <div class="flex-grow-1" style="min-width:0;">
+              <div class="song-title">${escapeHtml(song.title)}</div>
+              <div class="song-meta">${language.toUpperCase()}</div>
+              <div class="song-preview">${escapeHtml(song.preview)}</div>
+            </div>
+          </div>
+          <button class="btn btn-sm btn-outline-danger align-self-center" onclick="delSong('${song.id}', '${escapeJs(song.title)}')">Delete</button>
+        </div>
+      `).join('');
+
+      updateBulkSummary();
+    }
+
+    function toggleSongSelection(songId, checked) {
+      if (checked) {
+        selectedSongIds.add(songId);
+      } else {
+        selectedSongIds.delete(songId);
+      }
+      updateBulkSummary();
+    }
+
+    function getVisibleSongs() {
+      return songsCache.filter(song => song.language === activeLibraryTab);
+    }
+
+    function updateBulkSummary() {
+      const visibleCount = getVisibleSongs().length;
+      const selectedVisibleCount = getVisibleSongs().filter(song => selectedSongIds.has(song.id)).length;
+      const totalSelectedCount = selectedSongIds.size;
+      document.getElementById('bulk-summary').innerText = `${activeLibraryTab.toUpperCase()} songs: ${visibleCount} | Selected in tab: ${selectedVisibleCount} | Total selected: ${totalSelectedCount}`;
+    }
+
+    function toggleSelectVisible(checked) {
+      getVisibleSongs().forEach(song => {
+        if (checked) {
+          selectedSongIds.add(song.id);
+        } else {
+          selectedSongIds.delete(song.id);
+        }
+      });
+      renderSongListForLanguage(activeLibraryTab);
+    }
+
+    async function bulkDeleteSelected() {
+      if (selectedSongIds.size === 0) {
+        alert("Select songs first.");
+        return;
+      }
+
+      const songsToDelete = songsCache.filter(song => selectedSongIds.has(song.id));
+      if (!confirm(`Delete ${songsToDelete.length} selected song(s) from Firebase?`)) return;
+
+      try {
+        await Promise.all(songsToDelete.map(song => fetch(`${API_BASE}/${song.id}`, { method: 'DELETE' })));
+        selectedSongIds.clear();
+        loadSongs();
+      } catch (e) {
+        alert("Bulk delete failed.");
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function escapeJs(value) {
+      return String(value)
+        .replace(/\\/g, "\\\\")
+        .replace(/'/g, "\\'");
     }
   </script>
 </body>
