@@ -4,6 +4,7 @@
   <title>GGGM Admin Dashboard (Firebase)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
   <style>
     body { background: #F4F6F9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; min-height: 100vh; }
     .navbar { background: #3F51B5; color: white; margin-bottom: 30px; }
@@ -21,6 +22,10 @@
     .song-preview { font-size: 13px; color: #6B7280; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .bulk-toolbar { background: #EEF2FF; border-radius: 14px; padding: 12px 14px; }
     .library-empty { color: #6B7280; text-align: center; padding: 36px 12px; }
+    .user-row { border-bottom: 1px solid #E5E7EB; padding: 14px 0; }
+    .user-row:last-child { border-bottom: none; }
+    .user-name { font-size: 18px; font-weight: 700; color: #111827; }
+    .user-meta { font-size: 13px; color: #6B7280; }
   </style>
 </head>
 <body>
@@ -91,6 +96,24 @@
                 <div id="song-list-telugu" class="song-list" style="display:none;"></div>
              </div>
            </div>
+
+           <div class="card p-4 mt-4">
+             <div class="d-flex justify-content-between align-items-center mb-3">
+               <div>
+                 <h4 class="mb-1">App Users</h4>
+                 <div class="text-muted small">First-time app logins collected from the mobile app.</div>
+               </div>
+               <div class="d-flex gap-2">
+                 <button class="btn btn-sm btn-outline-secondary" onclick="loadUsers()">Refresh Users</button>
+                 <button class="btn btn-sm btn-success" onclick="exportUsersExcel()">Download Excel</button>
+               </div>
+             </div>
+             <div class="bulk-toolbar d-flex justify-content-between align-items-center mb-3">
+               <div class="small fw-semibold" id="user-summary">Loading users...</div>
+               <div class="small text-muted">Tracks registered app users, not raw install count.</div>
+             </div>
+             <div id="user-list" class="song-list">Loading user details...</div>
+           </div>
         </div>
       </div>
     </div>
@@ -100,9 +123,11 @@
     // FIREBASE CONFIG
     const PROJECT_ID = "grace-lyrics-admin";
     const API_BASE = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/songs`;
+    const USERS_BASE = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/users`;
     
     let authPass = "";
     let songsCache = [];
+    let usersCache = [];
     let activeLibraryTab = "tamil";
     const selectedSongIds = new Set();
 
@@ -113,6 +138,7 @@
         document.getElementById('login-sec').style.display = 'none';
         document.getElementById('dash-sec').style.display = 'block';
         loadSongs();
+        loadUsers();
       } else { alert("Wrong password!"); }
     }
 
@@ -251,6 +277,35 @@
         .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: "base" }));
     }
 
+    async function loadUsers() {
+      const userList = document.getElementById('user-list');
+      userList.innerHTML = "Loading user details...";
+
+      try {
+        usersCache = await fetchAllDocuments(USERS_BASE);
+        renderUsers();
+      } catch (e) {
+        userList.innerHTML = "Error loading users from Firebase. Check Rules.";
+      }
+    }
+
+    async function fetchAllDocuments(baseUrl) {
+      const docs = [];
+      let nextPageToken = "";
+
+      while (true) {
+        const url = nextPageToken ? `${baseUrl}?pageToken=${encodeURIComponent(nextPageToken)}` : baseUrl;
+        const res = await fetch(url);
+        const data = await res.json();
+        docs.push(...(data.documents || []));
+
+        if (!data.nextPageToken) break;
+        nextPageToken = data.nextPageToken;
+      }
+
+      return docs;
+    }
+
     function setLibraryTab(tab) {
       activeLibraryTab = tab;
       document.getElementById('tab-tamil').classList.toggle('active', tab === 'tamil');
@@ -340,6 +395,61 @@
       } catch (e) {
         alert("Bulk delete failed.");
       }
+    }
+
+    function renderUsers() {
+      const list = document.getElementById('user-list');
+      const summary = document.getElementById('user-summary');
+
+      if (!usersCache.length) {
+        summary.innerText = "Registered users: 0";
+        list.innerHTML = `<div class="library-empty">No user logins captured yet.</div>`;
+        return;
+      }
+
+      const users = usersCache
+        .map(doc => {
+          const fields = doc.fields || {};
+          return {
+            name: fields.name ? fields.name.stringValue : "Unknown User",
+            mobile: fields.mobile ? fields.mobile.stringValue : "-",
+            createdAt: fields.created_at ? fields.created_at.stringValue : "-",
+            lastSeen: fields.last_seen ? fields.last_seen.stringValue : "-",
+          };
+        })
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+
+      summary.innerText = `Registered users: ${users.length}`;
+      list.innerHTML = users.map(user => `
+        <div class="user-row">
+          <div class="user-name">${escapeHtml(user.name)}</div>
+          <div class="user-meta">Mobile: ${escapeHtml(user.mobile)}</div>
+          <div class="user-meta">First login: ${escapeHtml(user.createdAt)}</div>
+          <div class="user-meta">Last seen: ${escapeHtml(user.lastSeen)}</div>
+        </div>
+      `).join('');
+    }
+
+    function exportUsersExcel() {
+      if (!usersCache.length) {
+        alert("No users to export yet.");
+        return;
+      }
+
+      const rows = usersCache.map(doc => {
+        const fields = doc.fields || {};
+        return {
+          Name: fields.name ? fields.name.stringValue : "",
+          Mobile: fields.mobile ? fields.mobile.stringValue : "",
+          FirstLogin: fields.created_at ? fields.created_at.stringValue : "",
+          LastSeen: fields.last_seen ? fields.last_seen.stringValue : "",
+        };
+      });
+
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "GGGM Users");
+      XLSX.writeFile(workbook, "gggm-users.xlsx");
     }
 
     function escapeHtml(value) {

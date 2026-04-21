@@ -1,0 +1,8 @@
+build/
+build/apk/
+__pycache__/
+*.pyc
+feature_preview.png
+old_apk_main.py
+working_apk_main.py
+whatsapp_logo.svg
